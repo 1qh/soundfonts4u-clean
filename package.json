@@ -1,0 +1,16 @@
+{
+  "name": "soundfonts4u-clean",
+  "private": true,
+  "description": "Deterministic rebuild of the soundfonts4u SF2 collection into flat, deduplicated, uniquely named family fonts",
+  "type": "module",
+  "scripts": {
+    "build": "bun src/build.ts",
+    "check": "lintmax check",
+    "fix": "lintmax fix"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "lintmax": "latest",
+    "typescript": "6.0"
+  }
+}
