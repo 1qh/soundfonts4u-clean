@@ -96,3 +96,17 @@ describe('chateau abbreviations and stabs', () => {
     expect(keywordFamilies('Orchestra Hit')).toStrictEqual(['Fx'])
   })
 })
+describe('guitar words', () => {
+  test('reads a steel guitar layer as acoustic', () => {
+    expect(leadInstrument({ candidates: keywordFamilies('Stl Gtr+Pad'), name: 'Stl Gtr+Pad' })).toBe('Acoustic')
+  })
+  test('keeps a bass guitar in Bass only', () => {
+    expect(keywordFamilies('Bass Guitar')).toStrictEqual(['Bass'])
+  })
+  test('reads a plain guitar as electric', () => {
+    expect(keywordFamilies('Clean Gtr')).toContain('EGuitar')
+  })
+  test('files an electric grand under the character pianos', () => {
+    expect(topicOf({ family: 'Piano', name: 'Electric Piano' })).toBe('Upright')
+  })
+})

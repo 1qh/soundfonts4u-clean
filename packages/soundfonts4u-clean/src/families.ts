@@ -52,16 +52,8 @@ const KEYWORDS: readonly (readonly [Family, readonly RegExp[]])[] = [
     [/vibra|marimba|xylo|glock|celesta|bell|(?<!wind\s?)chime|music\s?box|dulcimer|kalimba|steel\s?drum|tubular/iv]
   ],
   ['Nylon', [/nylon|classic\w*\s*g|spanish/iv]],
-  ['Acoustic', [/steel|acoustic\s*g|12\s?string|folk|finger\s?pick/iv]],
-  [
-    'EGuitar',
-    [
-      /jazz\s?g|clean|elec\w*\s*g|dist|overdrive/iv,
-      /muted|strat|tele|les\s?paul|\blp\b/iv,
-      /single\s?coil/iv,
-      /g(?:ui)?t(?:ar)?/iv
-    ]
-  ],
+  ['Acoustic', [/steel|\bstl\b|acoustic\s*g|12\s?string|folk|finger\s?pick/iv]],
+  ['EGuitar', [/jazz\s?g|clean|elec\w*\s*g|dist|overdrive/iv, /muted|strat|tele|les\s?paul|\blp\b/iv, /single\s?coil/iv]],
   ['Bass', [/bass/iv]],
   ['Strings', [/string|\bstr\b|violin|viola|cello|pizz|ensemble|orchestra(?!\s?hit)/iv]],
   ['Harp', [/harp/iv]],
@@ -122,10 +114,13 @@ interface Ambiguity {
   key: string
   name: string
 }
+const GENERIC_GUITAR = /g(?:ui)?t(?:ar)?/iv
+const SPECIFIC_GUITAR_FAMILIES = new Set<Family>(['Acoustic', 'Bass', 'EGuitar', 'Nylon'])
 const keywordFamilies = (name: string): Family[] => {
   const spaced = spacedWords(name)
   const hits = KEYWORDS.filter(([, patterns]) => patterns.some(pattern => pattern.test(spaced))).map(([f]) => f)
-  return [...new Set(hits)]
+  const isGenericGuitar = GENERIC_GUITAR.test(spaced) && hits.every(f => !SPECIFIC_GUITAR_FAMILIES.has(f))
+  return [...new Set(isGenericGuitar ? [...hits, 'EGuitar' as const] : hits)]
 }
 const SF2_EXTENSION = /\.sf2$/iv
 const sourceFileFamily = (sourceFile: string): Family | undefined => {
@@ -318,7 +313,7 @@ const PERCUSSION_PATTERNS = [
   /tambour|snap|castan|cymbal|\bcym\b|reverse|\btoms?\b|wood\s?block|timpani|taiko|melodic|synth drum|concert/iv,
   /wind\s?chime|bass drum|\bsfx\b|crash|\bsd\b|kick|bongo|conga|agogo|cowbell|triangle|shaker|clap/iv
 ]
-const UPRIGHT = /upright|honky|tonk|\bcp\s?80\b/iv
+const UPRIGHT = /upright|honky|tonk|\bcp\s?80\b|electric/iv
 const isPercussionName = (name: string): boolean => {
   const spaced = spacedWords(name)
   return PERCUSSION_PATTERNS.some(pattern => pattern.test(spaced))
