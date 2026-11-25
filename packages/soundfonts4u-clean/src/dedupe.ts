@@ -176,4 +176,4 @@ const dedupe = async ({
   return { kept: audible.kept, merges: [...versioned.merges, ...audible.merges] }
 }
 export type { DedupeResult, Merge }
-export { NULL_THRESHOLD_DB, SILENT_DB, dedupe, nullDb }
+export { dedupe, NULL_THRESHOLD_DB, nullDb, SILENT_DB }

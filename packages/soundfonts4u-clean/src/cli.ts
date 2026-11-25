@@ -18,7 +18,7 @@ import { byCodeUnit, listPresets, loadFont, presetKey, slotOf } from './fonts.js
 import { SUBFAMILY_NAMES } from './hand-table.js'
 import { assignNames } from './names.js'
 import { centroid, orderBySimilarity } from './order.js'
-import { renderFont, rendererKey, segmentOf } from './render.js'
+import { rendererKey, renderFont, segmentOf } from './render.js'
 import { hasSegments, openSegments, storeSegments } from './store.js'
 import { UPSTREAM, verifyInput } from './upstream.js'
 import { buildFamilyFont, shareIdenticalSamples } from './write.js'
@@ -251,8 +251,8 @@ const splitFamily = ({
   const chunks: SourcePreset[][] = [[]]
   for (const component of components) {
     const last = chunks.at(-1) ?? []
-    if (!fitsOneFont([...last, ...component])) chunks.push([...component])
-    else last.push(...component)
+    if (fitsOneFont([...last, ...component])) last.push(...component)
+    else chunks.push([...component])
   }
   return chunks.map(c => c.toSorted(byPosition))
 }
@@ -607,7 +607,8 @@ const proveOutput = async ({
       const db = nullDb(segmentOf({ index, rendered }), await readSource(m.key))
       if (db === SILENT_DB) exact += 1
       worst = Math.max(worst, db)
-      if (db !== SILENT_DB) failures.push(`${font.fileName}/${m.name} from ${m.key}: null ${db.toFixed(1)} dB, not bit-exact`)
+      if (db !== SILENT_DB)
+        failures.push(`${font.fileName}/${m.name} from ${m.key}: null ${db.toFixed(1)} dB, not bit-exact`)
     }
     log(`proved ${font.fileName}: ${exact} of ${font.members.length} bit-exact, worst null ${worst.toFixed(1)} dB`)
   }

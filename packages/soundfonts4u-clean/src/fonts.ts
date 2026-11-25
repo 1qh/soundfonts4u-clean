@@ -61,9 +61,9 @@ const recordingsOf = ({
   return [...found].toSorted(byCodeUnit)
 }
 const RANGE_AND_LINK = new Set<number>([
-  GeneratorTypes.sampleID,
   GeneratorTypes.instrument,
   GeneratorTypes.keyRange,
+  GeneratorTypes.sampleID,
   GeneratorTypes.velRange
 ])
 const writtenGenerators = ({ isLinked, zone }: { isLinked: boolean; zone: BasicZone }): number =>
@@ -71,7 +71,15 @@ const writtenGenerators = ({ isLinked, zone }: { isLinked: boolean; zone: BasicZ
   Number(zone.hasKeyRange) +
   Number(zone.hasVelRange) +
   Number(isLinked)
-const instrumentCostsOf = ({ bank, preset, sourceFile }: { bank: BasicSoundBank; preset: BasicPreset; sourceFile: string }): InstrumentCost[] =>
+const instrumentCostsOf = ({
+  bank,
+  preset,
+  sourceFile
+}: {
+  bank: BasicSoundBank
+  preset: BasicPreset
+  sourceFile: string
+}): InstrumentCost[] =>
   [...new Set(preset.zones.map(z => z.instrument))].map(instrument => {
     let generators = 0
     let zones = 0

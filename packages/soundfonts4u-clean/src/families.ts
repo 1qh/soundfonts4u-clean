@@ -130,7 +130,8 @@ const firstPass = (
     const hand = HAND_FAMILIES[p.key]
     const hits = keywordFamilies(p.name)
     const drumKit = p.slot.isDrum || p.slot.bank >= GM_DRUM_BANK_FLOOR ? 'Drums' : undefined
-    const single = hand ?? drumKit ?? (hits.length === 1 ? hits[0] : undefined) ?? (hits.length === 0 ? fallbackFamily(p) : undefined)
+    const single =
+      hand ?? drumKit ?? (hits.length === 1 ? hits[0] : undefined) ?? (hits.length === 0 ? fallbackFamily(p) : undefined)
     if (single !== undefined) labels.set(p.key, single)
     else if (hits.length > 1) ambiguous.push(p)
     else unlabelled.push(`${p.key} (${p.name})`)
@@ -181,7 +182,9 @@ const labelAll = ({
   for (const p of ambiguous) {
     const candidates = keywordFamilies(p.name)
     const embedding = embeddings.get(p.key)
-    const chosen = embedding === undefined ? undefined : closestFamily({ candidates, centroids, embedding })
+    const gm = GM_LAYOUT_FONTS.has(p.sourceFile) && !p.slot.isDrum ? gmFamily(p.slot.program) : undefined
+    const byProgram = gm !== undefined && candidates.includes(gm) ? gm : undefined
+    const chosen = byProgram ?? (embedding === undefined ? undefined : closestFamily({ candidates, centroids, embedding }))
     if (chosen === undefined)
       throw new Error(`cannot resolve family for ${p.key} (${p.name}) among ${candidates.join(', ')}`)
     labels.set(p.key, chosen)
@@ -269,8 +272,13 @@ const runPass = ({ movable, placement }: { movable: SourcePreset[]; placement: P
 }
 const LAYER_MARK = /\+|&|\blayer/iv
 const PIANO_LAYER = /\+|\blayer|\bpad\b|\bstr(?:ings?)?\b|chamber|orch|\bbell|&\s*(?:str|fm|pad)/iv
+const PERCUSSION = /tambour|snap|castan|cymbal|\bcym\b|reverse|\btoms?\b|wood\s?block|timpani|taiko|melodic|synth drum|concert|bass drum|\bsfx\b|crash|\bsd\b|kick|bongo|conga|agogo|cowbell|triangle|shaker|clap/iv
 const UPRIGHT = /upright|honky|tonk|\bcp\s?80\b/iv
 const FAMILY_TOPICS: Readonly<Partial<Record<Family, readonly (readonly [string, (name: string) => boolean])[]>>> = {
+  Drums: [
+    ['Percussion', name => PERCUSSION.test(spacedWords(name))],
+    ['Drums', () => true]
+  ],
   Piano: [
     ['PianoLayer', name => PIANO_LAYER.test(name)],
     ['Upright', name => UPRIGHT.test(name)],
@@ -284,8 +292,7 @@ const topicOf = ({ family, name }: { family: Family; name: string }): string => 
   if (hit === undefined) throw new Error(`no ${family} topic for ${name}`)
   return hit[0]
 }
-const isLayerName = (name: string): boolean =>
-  LAYER_MARK.test(name) || KEYWORDS.filter(([, patterns]) => patterns.some(pattern => pattern.test(name))).length > 1
+const isLayerName = (name: string): boolean => LAYER_MARK.test(name)
 const placeLayers = ({
   labels,
   presets,

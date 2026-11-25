@@ -51,3 +51,11 @@ describe('topicOf', () => {
     expect(topicOf({ family: 'Organ', name: 'Rock Organ' })).toBe('Organ')
   })
 })
+describe('drum topics', () => {
+  test.each(['Timpani', 'Taiko Drum', 'Reverse Cymbal', 'Melodic Tom 2', 'Wood Block', 'SFX', 'Castanets'])('files %s under Percussion', name => {
+    expect(topicOf({ family: 'Drums', name })).toBe('Percussion')
+  })
+  test.each(['Standard Kit 1', 'Room', 'Jazz', 'TR-808', 'Brush Drums', 'Orchestra Kit'])('files %s under Drums', name => {
+    expect(topicOf({ family: 'Drums', name })).toBe('Drums')
+  })
+})

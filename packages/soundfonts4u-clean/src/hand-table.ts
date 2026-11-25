@@ -1,5 +1,7 @@
 import type { Family } from './families.js'
 const HAND_FAMILIES: Readonly<Record<string, Family>> = {
+  'GeneralUser_GS_v1_471.sf2|120|48': 'Drums',
+  'Nice-Instruments-Extended-V1.3.sf2|0|17': 'EPiano',
   '2Grands-Plus-Instruments-bs16i-v4.0.sf2|0|74': 'Piano',
   'Chris Mandolin-4U-v3.0.sf2|0|4': 'Ethnic',
   'Chris Mandolin-4U-v3.0.sf2|0|8': 'Ethnic',
@@ -44,7 +46,6 @@ const HAND_NAMES: Readonly<Record<string, string>> = {
   'Rhodes EPs Plus-v2.3.sf2|0|12': 'BellFastTremPunchy'
 }
 const SUBFAMILY_NAMES: Readonly<Partial<Record<Family, readonly string[]>>> = {
-  Drums: ['Drums', 'Timpani'],
   Fx: ['Fx', 'Noise']
 }
 export { HAND_FAMILIES, HAND_NAMES, SUBFAMILY_NAMES }

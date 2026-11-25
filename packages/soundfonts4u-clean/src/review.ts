@@ -2,15 +2,15 @@ import { file, spawn, write } from 'bun'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { renderToWav, segmentSeconds } from './render.js'
-interface ManifestPreset {
-  name: string
-  program: number
-  source: string
-}
 interface ManifestFont {
   bank: number
   file: string
   presets: ManifestPreset[]
+}
+interface ManifestPreset {
+  name: string
+  program: number
+  source: string
 }
 const REVIEW_RATE = 44_100
 const ENCODE_TIMEOUT_MS = 600_000
@@ -21,10 +21,22 @@ const clock = (seconds: number): string =>
 const nameTable = (font: ManifestFont): string => {
   const step = segmentSeconds()
   const rows = font.presets.map(p => `| ${clock(p.program * step)} | ${p.name} | ${p.source.split('|')[0] ?? ''} |`)
-  return [`## ${font.file.replace('.sf2', '')} (${font.presets.length} sounds)`, '', '| At | Name | From |', '|---|---|---|', ...rows, ''].join('\n')
+  return [
+    `## ${font.file.replace('.sf2', '')} (${font.presets.length} sounds)`,
+    '',
+    '| At | Name | From |',
+    '|---|---|---|',
+    ...rows,
+    ''
+  ].join('\n')
 }
 const encode = async ({ m4a, wav }: { m4a: string; wav: string }): Promise<void> => {
-  const proc = spawn({ cmd: ['afconvert', '-f', 'm4af', '-d', 'aac', '-b', '160000', wav, m4a], stderr: 'pipe', stdout: 'ignore', timeout: ENCODE_TIMEOUT_MS })
+  const proc = spawn({
+    cmd: ['afconvert', '-f', 'm4af', '-d', 'aac', '-b', '160000', wav, m4a],
+    stderr: 'pipe',
+    stdout: 'ignore',
+    timeout: ENCODE_TIMEOUT_MS
+  })
   const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()])
   if (code !== 0) throw new Error(`afconvert exited ${code} on ${wav}: ${stderr.trim()}`)
   await file(wav).delete()
@@ -33,7 +45,13 @@ const renderSample = async ({ font, fontsDir, outDir }: { font: ManifestFont; fo
   const base = font.file.replace('.sf2', '')
   const wav = join(outDir, `${base}.wav`)
   const slots = font.presets.map(p => ({ bank: font.bank, isDrum: base === 'Drums', program: p.program }))
-  await renderToWav({ fontPath: join(fontsDir, font.file), sampleRate: REVIEW_RATE, slots, wavPath: wav, workDir: join(outDir, 'work') })
+  await renderToWav({
+    fontPath: join(fontsDir, font.file),
+    sampleRate: REVIEW_RATE,
+    slots,
+    wavPath: wav,
+    workDir: join(outDir, 'work')
+  })
   await encode({ m4a: join(outDir, `${base}.m4a`), wav })
 }
 const main = async () => {

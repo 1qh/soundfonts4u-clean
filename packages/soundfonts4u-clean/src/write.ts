@@ -87,7 +87,9 @@ const buildFamilyFont = ({ creationDate, font }: { creationDate: Date; font: Fam
     }
   const limit = 65_535
   if (Object.values(counts).some(n => n > limit))
-    throw new Error(`${font.fileName}: ${JSON.stringify(counts)} across ${bank.instruments.length} instruments, SF2 holds ${limit} of each`)
+    throw new Error(
+      `${font.fileName}: ${JSON.stringify(counts)} across ${bank.instruments.length} instruments, SF2 holds ${limit} of each`
+    )
   return bank.writeSF2({ writeDefaultModulators: false, writeExtendedLimits: false })
 }
 const writeFamilyFont = async ({
