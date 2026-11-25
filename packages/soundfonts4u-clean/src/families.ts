@@ -53,7 +53,14 @@ const KEYWORDS: readonly (readonly [Family, readonly RegExp[]])[] = [
   ],
   ['Nylon', [/nylon|classic\w*\s*g|spanish/iv]],
   ['Acoustic', [/steel|\bstl\b|acoustic\s*g|12\s?string|folk|finger\s?pick/iv]],
-  ['EGuitar', [/jazz\s?g|clean|elec\w*\s*g|dist|overdrive/iv, /muted|strat|tele|les\s?paul|\blp\b/iv, /single\s?coil/iv]],
+  [
+    'EGuitar',
+    [
+      /jazz\s?g|clean|elec\w*\s*g|dist|overdrive/iv,
+      /muted(?!\s?acoustic)|strat|tele|les\s?paul|\blp\b/iv,
+      /single\s?coil/iv
+    ]
+  ],
   ['Bass', [/bass/iv]],
   ['Strings', [/string|\bstr\b|violin|viola|cello|pizz|ensemble|orchestra(?!\s?hit)/iv]],
   ['Harp', [/harp/iv]],

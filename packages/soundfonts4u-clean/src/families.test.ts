@@ -110,3 +110,11 @@ describe('guitar words', () => {
     expect(topicOf({ family: 'Piano', name: 'Electric Piano' })).toBe('Upright')
   })
 })
+describe('muted guitars', () => {
+  test('keeps a muted acoustic guitar acoustic', () => {
+    expect(keywordFamilies('Muted Acoustic Gtr')).toStrictEqual(['Acoustic'])
+  })
+  test('still reads a plain muted guitar as electric', () => {
+    expect(keywordFamilies('Muted Guitar')).toContain('EGuitar')
+  })
+})
