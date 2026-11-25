@@ -1,0 +1,34 @@
+diff --git a/dist/index.js b/dist/index.js
+index 34acbb4fbe042f5b70ad4cf7a4fa05dfa27d962d..58b1c1165cbfd0dac76023e55f2bef2d5aad9521 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -9506,10 +9506,10 @@ function sf2KeepsModulator(m, preset = false) {
+ * @param amount The amount in the file.
+ */
+ function fromSF2SendAmount(amount) {
+-	return Math.max(-32768, Math.min(1e3, amount * SF2_SEND_SCALE));
++	return amount;
+ }
+ function toSF2SendAmount(amount) {
+-	return Math.round(amount / SF2_SEND_SCALE);
++	return amount;
+ }
+ /**
+ * The initial attenuation of an SF2 file in the unit of the bank, true centibels.
+@@ -9518,7 +9518,7 @@ function toSF2SendAmount(amount) {
+ * @internal
+ */
+ function fromSF2Attenuation(value) {
+-	return Math.round(value * SF2_ATTENUATION_SCALE);
++	return value;
+ }
+ /**
+ * The generator as an SF2 file stores it. The initial attenuation is the inverse of {@link fromSF2Attenuation}.
+@@ -9527,7 +9527,6 @@ function fromSF2Attenuation(value) {
+ * @internal
+ */
+ function toSF2Generator(g) {
+-	if (g.type === GeneratorTypes.initialAttenuation) return new Generator(g.type, Math.max(-32768, Math.min(32767, Math.round(g.value / SF2_ATTENUATION_SCALE))), false);
+ 	if (g.type === GeneratorTypes.sampleModes && (g.value < 0 || g.value > 3)) return new Generator(g.type, g.value === 4 ? 1 : 0, false);
+ 	return g;
+ }

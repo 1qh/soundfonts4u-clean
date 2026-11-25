@@ -43,5 +43,8 @@ const HAND_NAMES: Readonly<Record<string, string>> = {
   'Rhodes EPs Plus-v2.3.sf2|0|11': 'BellSlowTremHard',
   'Rhodes EPs Plus-v2.3.sf2|0|12': 'BellFastTremPunchy'
 }
-const SUBFAMILY_NAMES: Readonly<Partial<Record<Family, readonly string[]>>> = {}
+const SUBFAMILY_NAMES: Readonly<Partial<Record<Family, readonly string[]>>> = {
+  Drums: ['Drums', 'Timpani'],
+  Fx: ['Fx', 'Noise']
+}
 export { HAND_FAMILIES, HAND_NAMES, SUBFAMILY_NAMES }

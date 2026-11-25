@@ -34,5 +34,8 @@
     "msw",
     "sharp",
     "simple-git-hooks"
-  ]
+  ],
+  "patchedDependencies": {
+    "spessasynth_core@4.4.12": "patches/spessasynth_core@4.4.12.patch"
+  }
 }

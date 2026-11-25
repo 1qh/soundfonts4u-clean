@@ -1,6 +1,7 @@
 import type { BasicPreset, BasicSample } from 'spessasynth_core'
 import { CryptoHasher, write } from 'bun'
-import { BasicSoundBank } from 'spessasynth_core'
+import { BasicSoundBank, SoundBankCloner } from 'spessasynth_core'
+import { writtenGenerators } from './fonts.js'
 interface FamilyFont {
   bank: number
   fileName: string
@@ -47,8 +48,9 @@ const shareIdenticalSamples = (bank: BasicSoundBank): number => {
   return repointed
 }
 const addMembers = ({ bank, font }: { bank: BasicSoundBank; font: FamilyFont }) => {
+  const cloner = new SoundBankCloner(bank, { addToBank: true, reuseByName: false, reuseChildren: 'identity' })
   for (const [program, member] of font.members.entries()) {
-    const copy = bank.clonePreset(member.source, { addToBank: true, reuseByName: false, reuseChildren: 'none' })
+    const copy = cloner.clonePreset(member.source)
     copy.name = member.name
     copy.bankMSB = font.bank
     copy.bankLSB = 0
@@ -70,6 +72,22 @@ const buildFamilyFont = ({ creationDate, font }: { creationDate: Date; font: Fam
   bank.removeUnusedElements()
   bank.flush(false)
   assertLossless({ bank, fileName: font.fileName })
+  const counts = { igen: 0, imod: 0, izone: 0, pgen: 0, pmod: 0, pzone: 0, samples: bank.samples.length }
+  for (const i of bank.instruments)
+    for (const [index, z] of [i.globalZone, ...i.zones].entries()) {
+      counts.izone += 1
+      counts.igen += writtenGenerators({ isLinked: index > 0, zone: z })
+      counts.imod += z.modulators.length
+    }
+  for (const p of bank.presets)
+    for (const [index, z] of [p.globalZone, ...p.zones].entries()) {
+      counts.pzone += 1
+      counts.pgen += writtenGenerators({ isLinked: index > 0, zone: z })
+      counts.pmod += z.modulators.length
+    }
+  const limit = 65_535
+  if (Object.values(counts).some(n => n > limit))
+    throw new Error(`${font.fileName}: ${JSON.stringify(counts)} across ${bank.instruments.length} instruments, SF2 holds ${limit} of each`)
   return bank.writeSF2({ writeDefaultModulators: false, writeExtendedLimits: false })
 }
 const writeFamilyFont = async ({
@@ -84,4 +102,4 @@ const writeFamilyFont = async ({
   await write(path, buildFamilyFont({ creationDate, font }))
 }
 export type { FamilyFont, FamilyMember }
-export { buildFamilyFont, writeFamilyFont }
+export { buildFamilyFont, shareIdenticalSamples, writeFamilyFont }

@@ -1,8 +1,9 @@
 import decode from 'audio-decode'
-import { file, spawn, write } from 'bun'
+import { CryptoHasher, file, spawn, write } from 'bun'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { MIDIBuilder, MIDIControllers } from 'spessasynth_core'
+import { SF2_DRUM_BANK } from './fonts.js'
 interface PresetSlot {
   bank: number
   isDrum: boolean
@@ -39,7 +40,7 @@ const resetChannel = ({ slot, voice }: { slot: PresetSlot; voice: Voice }) => {
   const { channel, midi, start } = voice
   midi.controllerChange(start, 0, channel, MIDIControllers.allSoundOff, 0)
   midi.controllerChange(start, 0, channel, MIDIControllers.resetAllControllers, 0)
-  if (!slot.isDrum) midi.controllerChange(start, 0, channel, MIDIControllers.bankSelect, slot.bank % 128)
+  if (channel !== DRUM_CHANNEL) midi.controllerChange(start, 0, channel, MIDIControllers.bankSelect, slot.bank % 128)
   midi.programChange(start, 0, channel, slot.program)
 }
 const playScale = ({ notes, voice }: { notes: readonly number[]; voice: Voice }) => {
@@ -60,11 +61,13 @@ const playChord = ({ notes, voice }: { notes: readonly number[]; voice: Voice })
   }
 }
 const addSegment = ({ midi, slot, start }: { midi: MIDIBuilder; slot: PresetSlot; start: number }) => {
-  const channel = slot.isDrum ? DRUM_CHANNEL : MELODIC_CHANNEL
+  const channel = slot.isDrum && slot.bank === SF2_DRUM_BANK ? DRUM_CHANNEL : MELODIC_CHANNEL
   resetChannel({ slot, voice: { channel, midi, start } })
   playScale({ notes: slot.isDrum ? DRUM_NOTES : MELODIC_NOTES, voice: { channel, midi, start } })
   const chord = slot.isDrum ? DRUM_CHORD : MELODIC_CHORD
   playChord({ notes: chord, voice: { channel, midi, start: start + MELODIC_STEPS * STEP_TICKS } })
+  const silence = start + SEGMENT_TICKS - PAD_TICKS
+  for (const c of [MELODIC_CHANNEL, DRUM_CHANNEL]) midi.controllerChange(silence, 0, c, MIDIControllers.allSoundOff, 0)
 }
 const buildProbeMidi = (slots: PresetSlot[]): ArrayBuffer => {
   const midi = new MIDIBuilder({ initialTempo: TEMPO_BPM, timeDivision: TICKS_PER_QUARTER })
@@ -153,7 +156,39 @@ const renderFont = async ({
   const rendered = await readRender({ fontPath, sampleRate, slotCount: slots.length, wavPath })
   return rendered
 }
+const renderToWav = async ({
+  fontPath,
+  sampleRate,
+  slots,
+  wavPath,
+  workDir
+}: {
+  fontPath: string
+  sampleRate: number
+  slots: PresetSlot[]
+  wavPath: string
+  workDir: string
+}): Promise<void> => {
+  await mkdir(workDir, { recursive: true })
+  const midiPath = join(workDir, 'review.mid')
+  await write(midiPath, buildProbeMidi(slots))
+  await runFluidSynth({ fontPath, midiPath, sampleRate, wavPath })
+}
 const segmentOf = ({ index, rendered }: { index: number; rendered: RenderedFont }): Float32Array[] =>
   rendered.channels.map(c => c.subarray(index * rendered.segmentFrames, (index + 1) * rendered.segmentFrames))
+const REFERENCE_SLOTS: PresetSlot[] = [
+  { bank: 0, isDrum: false, program: 0 },
+  { bank: SF2_DRUM_BANK, isDrum: true, program: 0 },
+  { bank: 1, isDrum: true, program: 1 }
+]
+const rendererKey = async (): Promise<string> => {
+  const proc = spawn({ cmd: ['fluidsynth', '--version'], stderr: 'pipe', stdout: 'pipe', timeout: 30_000 })
+  const [code, version] = await Promise.all([proc.exited, new Response(proc.stdout).text()])
+  if (code !== 0) throw new Error(`fluidsynth --version exited ${code}`)
+  const hasher = new CryptoHasher('sha1')
+  hasher.update(version.trim())
+  hasher.update(new Uint8Array(buildProbeMidi(REFERENCE_SLOTS)))
+  return hasher.digest('hex').slice(0, 16)
+}
 export type { PresetSlot, RenderedFont }
-export { renderFont, segmentOf, segmentSeconds }
+export { renderFont, rendererKey, renderToWav, segmentOf, segmentSeconds }

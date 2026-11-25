@@ -1,8 +1,14 @@
-import type { BasicPreset, BasicSample } from 'spessasynth_core'
+import type { BasicPreset, BasicSample, BasicZone } from 'spessasynth_core'
 import { CryptoHasher, file } from 'bun'
-import { BasicSoundBank, SoundBankLoader } from 'spessasynth_core'
+import { BasicSoundBank, GeneratorTypes, SoundBankLoader } from 'spessasynth_core'
 import type { PresetSlot } from './render.js'
+interface InstrumentCost {
+  generators: number
+  id: string
+  zones: number
+}
 interface SourcePreset {
+  instruments: InstrumentCost[]
   key: string
   name: string
   recordings: string[]
@@ -54,6 +60,26 @@ const recordingsOf = ({
     for (const { sample } of zone.instrument.zones) found.add(digestOf({ hashes, recordingBytes, sample }))
   return [...found].toSorted(byCodeUnit)
 }
+const RANGE_AND_LINK = new Set<number>([
+  GeneratorTypes.sampleID,
+  GeneratorTypes.instrument,
+  GeneratorTypes.keyRange,
+  GeneratorTypes.velRange
+])
+const writtenGenerators = ({ isLinked, zone }: { isLinked: boolean; zone: BasicZone }): number =>
+  zone.generators.filter(g => !RANGE_AND_LINK.has(g.type)).length +
+  Number(zone.hasKeyRange) +
+  Number(zone.hasVelRange) +
+  Number(isLinked)
+const instrumentCostsOf = ({ bank, preset, sourceFile }: { bank: BasicSoundBank; preset: BasicPreset; sourceFile: string }): InstrumentCost[] =>
+  [...new Set(preset.zones.map(z => z.instrument))].map(instrument => {
+    let generators = 0
+    let zones = 0
+    zones += 1 + instrument.zones.length
+    generators += writtenGenerators({ isLinked: false, zone: instrument.globalZone })
+    for (const z of instrument.zones) generators += writtenGenerators({ isLinked: true, zone: z })
+    return { generators, id: `${sourceFile}#${bank.instruments.indexOf(instrument)}`, zones }
+  })
 const listPresets = ({
   bank,
   recordingBytes,
@@ -67,6 +93,7 @@ const listPresets = ({
   return bank.presets.map(preset => {
     const slot = slotOf(preset)
     return {
+      instruments: instrumentCostsOf({ bank, preset, sourceFile }),
       key: presetKey({ slot, sourceFile }),
       name: preset.name.trim(),
       recordings: recordingsOf({ hashes, preset, recordingBytes }),
@@ -75,5 +102,5 @@ const listPresets = ({
     }
   })
 }
-export type { SourcePreset }
-export { byCodeUnit, listPresets, loadFont, presetKey, slotOf }
+export type { InstrumentCost, SourcePreset }
+export { byCodeUnit, listPresets, loadFont, presetKey, SF2_DRUM_BANK, slotOf, writtenGenerators }

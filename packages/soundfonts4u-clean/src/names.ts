@@ -1,15 +1,56 @@
 import type { Family } from './families.js'
 import type { SourcePreset } from './fonts.js'
 import { cosineDistance, embedTexts } from './embed.js'
-import { splitWords } from './text.js'
 import { HAND_NAMES } from './hand-table.js'
+import { splitWords } from './text.js'
 const MAX_NAME_LENGTH = 20
 const VALID_NAME = /^[A-Z][A-Za-z]*$/v
 const NOT_THE_SOUND = new Set([
-  'abbey', 'best', 'bosendorfer', 'bs', 'chateau', 'ch', 'deluxe', 'dore', 'essential', 'extended', 'fazioli', 'fender',
-  'gibson', 'gs', 'gu', 'hamlin', 'jn', 'kawai', 'kbh', 'korg', 'lite', 'mark', 'marks', 'mason', 'mh', 'nice', 'ny',
-  'orpheus', 'ortheus', 'p', 'performer', 'plus', 'pro', 'real', 'roland', 's', 'sal', 'salamander', 'sgm', 'sso',
-  'steinway', 'ultimate', 'universal', 'yam', 'yamaha'
+  'abbey',
+  'best',
+  'bosendorfer',
+  'bs',
+  'ch',
+  'chateau',
+  'deluxe',
+  'dore',
+  'essential',
+  'extended',
+  'fazioli',
+  'fender',
+  'gibson',
+  'gs',
+  'gu',
+  'hamlin',
+  'jn',
+  'kawai',
+  'kbh',
+  'korg',
+  'lite',
+  'mark',
+  'marks',
+  'mason',
+  'mh',
+  'nice',
+  'ny',
+  'orpheus',
+  'ortheus',
+  'p',
+  'performer',
+  'plus',
+  'pro',
+  'real',
+  'roland',
+  's',
+  'sal',
+  'salamander',
+  'sgm',
+  'sso',
+  'steinway',
+  'ultimate',
+  'universal',
+  'yam',
+  'yamaha'
 ])
 const DIGIT_WORDS: Readonly<Record<string, string>> = { dx: 'Dx', s: 'S' }
 const words = splitWords
@@ -28,10 +69,10 @@ const FAMILY_WORDS: Readonly<Partial<Record<Family, readonly string[]>>> = {
   EPiano: ['ep', 'electric', 'piano', 'e'],
   Flute: ['flute'],
   Harp: ['harp'],
+  Harpsichord: ['harpsichord'],
   Nylon: ['nylon', 'guitar', 'gtr'],
   Organ: ['organ'],
   Piano: ['grand', 'piano'],
-  Harpsichord: ['harpsichord'],
   Strings: ['strings', 'string', 'str']
 }
 const DESCRIPTORS = [
@@ -79,7 +120,7 @@ const DESCRIPTORS = [
 const baseName = ({ family, p }: { family: Family | undefined; p: SourcePreset }): string => {
   const implied = new Set(family === undefined ? [] : (FAMILY_WORDS[family] ?? []))
   const all = words(p.name)
-  return camel(all.filter(w => !implied.has(w.toLowerCase()) && !NOT_THE_SOUND.has(w.toLowerCase())))
+  return camel(all.filter(w => !(implied.has(w.toLowerCase()) || NOT_THE_SOUND.has(w.toLowerCase()))))
 }
 interface NameProblem {
   key: string

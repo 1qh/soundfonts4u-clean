@@ -1,6 +1,6 @@
 import type { SourcePreset } from './fonts.js'
-import { byCodeUnit } from './fonts.js'
 import { cosineDistance } from './embed.js'
+import { byCodeUnit } from './fonts.js'
 import { HAND_FAMILIES } from './hand-table.js'
 import { centroid } from './order.js'
 import { spacedWords } from './text.js'
@@ -30,11 +30,14 @@ const FAMILIES = [
 type Family = (typeof FAMILIES)[number]
 const KEYWORDS: readonly (readonly [Family, readonly RegExp[]])[] = [
   ['Fx', [/\bhit\b/iv]],
-  ['Organ', [/organ|hammond|\bb3\b|rotary|leslie|drawbar|pipe\s|church|harmonium|accord|melodica|plein|\bjeu\b/iv]],
+  ['Organ', [/organ|hammond|\bb3\b|rotary|leslie|drawbar|\bpipe\s|church|harmonium|accord|melodica|plein|\bjeu\b/iv]],
   ['Drums', [/drum|kit\b|perc|standard|\broom\b|power|brush|electronic|\btr\s?\d|timpani|cymbal|snare|tom\b/iv]],
   ['EPiano', [/rhodes|wurli|\bep\b|\be\s?piano|elec\w*\s*piano|dx\s?7|fm\s.*piano|suitcase|tine/iv]],
   ['Harpsichord', [/harpsi|clav|cembalo/iv]],
-  ['Piano', [/grand|steinway|yamaha|bosendorfer|fazioli|chateau|salamander|piano|\bc5\b|\bs6\b|mod\w*\s?b\b|s\s?s\b|mason/iv]],
+  [
+    'Piano',
+    [/grand|steinway|yamaha|bosendorfer|fazioli|chateau|salamander|piano|\bc5\b|\bs6\b|mod\w*\s?b\b|\bs\s?s\b|mason/iv]
+  ],
   ['Mallets', [/vibra|marimba|xylo|glock|celesta|bell|chime|music\s?box|dulcimer|kalimba|steel\s?drum|tubular/iv]],
   ['Nylon', [/nylon|classic\w*\s*g|spanish/iv]],
   ['Acoustic', [/steel|acoustic\s*g|12\s?string|folk|finger\s?pick/iv]],
@@ -105,6 +108,7 @@ interface Ambiguity {
   candidates: Family[]
   chosen: Family
   key: string
+  name: string
 }
 const keywordFamilies = (name: string): Family[] => {
   const spaced = spacedWords(name)
@@ -116,14 +120,17 @@ const fallbackFamily = (p: SourcePreset): Family | undefined => {
   if (GM_LAYOUT_FONTS.has(p.sourceFile)) return gmFamily(p.slot.program)
   return undefined
 }
-const firstPass = (presets: SourcePreset[]): { ambiguous: SourcePreset[]; labels: Map<string, Family>; unlabelled: string[] } => {
+const firstPass = (
+  presets: SourcePreset[]
+): { ambiguous: SourcePreset[]; labels: Map<string, Family>; unlabelled: string[] } => {
   const labels = new Map<string, Family>()
   const ambiguous: SourcePreset[] = []
   const unlabelled: string[] = []
   for (const p of presets) {
     const hand = HAND_FAMILIES[p.key]
     const hits = keywordFamilies(p.name)
-    const single = hand ?? (hits.length === 1 ? hits[0] : undefined) ?? (hits.length === 0 ? fallbackFamily(p) : undefined)
+    const drumKit = p.slot.isDrum || p.slot.bank >= GM_DRUM_BANK_FLOOR ? 'Drums' : undefined
+    const single = hand ?? drumKit ?? (hits.length === 1 ? hits[0] : undefined) ?? (hits.length === 0 ? fallbackFamily(p) : undefined)
     if (single !== undefined) labels.set(p.key, single)
     else if (hits.length > 1) ambiguous.push(p)
     else unlabelled.push(`${p.key} (${p.name})`)
@@ -175,9 +182,10 @@ const labelAll = ({
     const candidates = keywordFamilies(p.name)
     const embedding = embeddings.get(p.key)
     const chosen = embedding === undefined ? undefined : closestFamily({ candidates, centroids, embedding })
-    if (chosen === undefined) throw new Error(`cannot resolve family for ${p.key} (${p.name}) among ${candidates.join(', ')}`)
+    if (chosen === undefined)
+      throw new Error(`cannot resolve family for ${p.key} (${p.name}) among ${candidates.join(', ')}`)
     labels.set(p.key, chosen)
-    ambiguities.push({ candidates, chosen, key: p.key })
+    ambiguities.push({ candidates, chosen, key: p.key, name: p.name })
   }
   return { ambiguities, labels }
 }
@@ -260,6 +268,22 @@ const runPass = ({ movable, placement }: { movable: SourcePreset[]; placement: P
   return moves
 }
 const LAYER_MARK = /\+|&|\blayer/iv
+const PIANO_LAYER = /\+|\blayer|\bpad\b|\bstr(?:ings?)?\b|chamber|orch|\bbell|&\s*(?:str|fm|pad)/iv
+const UPRIGHT = /upright|honky|tonk|\bcp\s?80\b/iv
+const FAMILY_TOPICS: Readonly<Partial<Record<Family, readonly (readonly [string, (name: string) => boolean])[]>>> = {
+  Piano: [
+    ['PianoLayer', name => PIANO_LAYER.test(name)],
+    ['Upright', name => UPRIGHT.test(name)],
+    ['Grand', () => true]
+  ]
+}
+const topicOf = ({ family, name }: { family: Family; name: string }): string => {
+  const topics = FAMILY_TOPICS[family]
+  if (topics === undefined) return family
+  const hit = topics.find(([, test]) => test(name))
+  if (hit === undefined) throw new Error(`no ${family} topic for ${name}`)
+  return hit[0]
+}
 const isLayerName = (name: string): boolean =>
   LAYER_MARK.test(name) || KEYWORDS.filter(([, patterns]) => patterns.some(pattern => pattern.test(name))).length > 1
 const placeLayers = ({
@@ -277,4 +301,4 @@ const placeLayers = ({
   return placement.placed
 }
 export type { Ambiguity, Family }
-export { FAMILIES, keywordFamilies, labelAll, placeLayers }
+export { FAMILIES, keywordFamilies, labelAll, placeLayers, topicOf }
