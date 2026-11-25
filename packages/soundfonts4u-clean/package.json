@@ -12,8 +12,5 @@
     "audio-decode": "latest",
     "ml-hclust": "latest",
     "spessasynth_core": "latest"
-  },
-  "devDependencies": {
-    "@types/bun": "latest"
   }
 }
