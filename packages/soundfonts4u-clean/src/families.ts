@@ -31,14 +31,14 @@ type Family = (typeof FAMILIES)[number]
 const KEYWORDS: readonly (readonly [Family, readonly RegExp[]])[] = [
   ['Fx', [/\bhit\b/iv]],
   ['Organ', [/organ|hammond|\bb3\b|rotary|leslie|drawbar|\bpipe\s|church|harmonium|accord|melodica|plein|\bjeu\b/iv]],
-  ['Drums', [/drum|kit\b|perc|standard|\broom\b|power|brush|electronic|\btr\s?\d|timpani|cymbal|snare|tom\b/iv]],
+  ['Drums', [/drum|kit\b|perc|standard|\broom\b|power|brush|electronic|\btr\s?\d|timpani|cymbal|snare|tom\b|tambourine|wind\s?chime/iv]],
   ['EPiano', [/rhodes|wurli|\bep\b|\be\s?piano|elec\w*\s*piano|dx\s?7|fm\s.*piano|suitcase|tine/iv]],
   ['Harpsichord', [/harpsi|clav|cembalo/iv]],
   [
     'Piano',
     [/grand|steinway|yamaha|bosendorfer|fazioli|chateau|salamander|piano|\bc5\b|\bs6\b|mod\w*\s?b\b|\bs\s?s\b|mason/iv]
   ],
-  ['Mallets', [/vibra|marimba|xylo|glock|celesta|bell|chime|music\s?box|dulcimer|kalimba|steel\s?drum|tubular/iv]],
+  ['Mallets', [/vibra|marimba|xylo|glock|celesta|bell|(?<!wind\s?)chime|music\s?box|dulcimer|kalimba|steel\s?drum|tubular/iv]],
   ['Nylon', [/nylon|classic\w*\s*g|spanish/iv]],
   ['Acoustic', [/steel|acoustic\s*g|12\s?string|folk|finger\s?pick/iv]],
   [
@@ -51,11 +51,11 @@ const KEYWORDS: readonly (readonly [Family, readonly RegExp[]])[] = [
     ]
   ],
   ['Bass', [/bass/iv]],
-  ['Strings', [/string|\bstr\b|violin|viola|cello|pizz|tremolo|ensemble|orchestra/iv]],
+  ['Strings', [/string|\bstr\b|violin|viola|cello|pizz|ensemble|orchestra/iv]],
   ['Harp', [/harp/iv]],
   ['Choir', [/choir|vocal|voice|aah|ooh|vox/iv]],
-  ['Brass', [/brass|trumpet|trombone|horn|tuba/iv]],
-  ['Reed', [/sax|oboe|clarinet|bassoon/iv]],
+  ['Brass', [/brass|trumpet|trombone|(?<!english\s?)horn|tuba/iv]],
+  ['Reed', [/sax|oboe|clarinet|bassoon|english\s?horn/iv]],
   ['Flute', [/flute|piccolo|recorder|whistle|ocarina|bottle|shakuhachi/iv]],
   ['Lead', [/lead|square|saw|sine/iv]],
   ['Pad', [/pad|warm|halo|sweep|polysynth|space|atmos/iv]],
@@ -115,10 +115,14 @@ const keywordFamilies = (name: string): Family[] => {
   const hits = KEYWORDS.filter(([, patterns]) => patterns.some(pattern => pattern.test(spaced))).map(([f]) => f)
   return [...new Set(hits)]
 }
+const sourceFileFamily = (sourceFile: string): Family | undefined => {
+  const hits = keywordFamilies(sourceFile.replace(/\.sf2$/iv, ''))
+  return hits.length === 1 ? hits[0] : undefined
+}
 const fallbackFamily = (p: SourcePreset): Family | undefined => {
   if (p.slot.isDrum || p.slot.bank >= GM_DRUM_BANK_FLOOR) return 'Drums'
   if (GM_LAYOUT_FONTS.has(p.sourceFile)) return gmFamily(p.slot.program)
-  return undefined
+  return sourceFileFamily(p.sourceFile)
 }
 const firstPass = (
   presets: SourcePreset[]
@@ -184,7 +188,8 @@ const labelAll = ({
     const embedding = embeddings.get(p.key)
     const gm = GM_LAYOUT_FONTS.has(p.sourceFile) && !p.slot.isDrum ? gmFamily(p.slot.program) : undefined
     const byProgram = gm !== undefined && candidates.includes(gm) ? gm : undefined
-    const chosen = byProgram ?? (embedding === undefined ? undefined : closestFamily({ candidates, centroids, embedding }))
+    const instrument = candidates.length === 2 && candidates.includes('Synth') ? candidates.find(c => c !== 'Synth') : undefined
+    const chosen = byProgram ?? instrument ?? (embedding === undefined ? undefined : closestFamily({ candidates, centroids, embedding }))
     if (chosen === undefined)
       throw new Error(`cannot resolve family for ${p.key} (${p.name}) among ${candidates.join(', ')}`)
     labels.set(p.key, chosen)

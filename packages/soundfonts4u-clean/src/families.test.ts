@@ -59,3 +59,15 @@ describe('drum topics', () => {
     expect(topicOf({ family: 'Drums', name })).toBe('Drums')
   })
 })
+describe('keyword edges', () => {
+  test('files an english horn as a reed, not brass', () => {
+    expect(keywordFamilies('English Horn')).toStrictEqual(['Reed'])
+  })
+  test('reads tremolo as an articulation, not a family', () => {
+    expect(keywordFamilies('Slow, Light, Tremolo')).toStrictEqual([])
+  })
+  test('files a tambourine and a wind chime as percussion', () => {
+    expect(keywordFamilies('Tambourine')).toStrictEqual(['Drums'])
+    expect(keywordFamilies('Windchimes')).toStrictEqual(['Drums'])
+  })
+})

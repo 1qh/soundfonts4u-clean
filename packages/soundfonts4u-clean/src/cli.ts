@@ -1,8 +1,8 @@
-/** biome-ignore-all lint/performance/noAwaitInLoops: fonts are analysed, staged, written and proved one at a time to bound memory, and their log lines follow that order */
+/** biome-ignore-all lint/performance/noAwaitInLoops: analysis and writing run sequentially, and proof runs in bounded batches */
 /* eslint-disable no-await-in-loop */
 import type { BasicPreset } from 'spessasynth_core'
-import { file, gc, write } from 'bun'
-import { mkdir } from 'node:fs/promises'
+import { CryptoHasher, file, gc, write } from 'bun'
+import { mkdir, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { BasicSoundBank, SoundBankCloner } from 'spessasynth_core'
 import type { Merge } from './dedupe.js'
@@ -15,13 +15,17 @@ import { dedupe, nullDb, SILENT_DB } from './dedupe.js'
 import { CLAP_SAMPLE_RATE, cosineDistance, createEmbedder, embedTexts, toMono } from './embed.js'
 import { labelAll, placeLayers, topicOf } from './families.js'
 import { byCodeUnit, listPresets, loadFont, presetKey, slotOf } from './fonts.js'
-import { SUBFAMILY_NAMES } from './hand-table.js'
+import { DROPPED_SOUNDS, SUBFAMILY_NAMES } from './hand-table.js'
 import { assignNames } from './names.js'
 import { centroid, orderBySimilarity } from './order.js'
 import { rendererKey, renderFont, segmentOf } from './render.js'
 import { hasSegments, openSegments, storeSegments } from './store.js'
 import { UPSTREAM, verifyInput } from './upstream.js'
 import { buildFamilyFont, shareIdenticalSamples } from './write.js'
+interface FontRecord {
+  fontKey: string
+  sha256: string
+}
 interface FontWork {
   fontPath: string
   keys: string[]
@@ -69,9 +73,9 @@ const log = (message: string) => {
 const isEmbeddingTable = (value: unknown): value is Record<string, number[]> =>
   typeof value === 'object' &&
   value !== null &&
-  !Array.isArray(value) &&
+  Array.isArray(value) === false &&
   Object.values(value).every((v: unknown) => Array.isArray(v) && v.every((x: unknown) => typeof x === 'number'))
-const ensureSegments = async (work: FontWork): Promise<void> => {
+const ensureSegments = async (work: FontWork) => {
   const segDir = join(work.paths.cache, 'render64', work.paths.renderer, work.upstream.sha256)
   if (await hasSegments(segDir)) return
   const rendered = await renderFont({
@@ -88,9 +92,9 @@ const loadEmbeddings = async ({
 }: {
   embeddings: Map<string, number[]>
   embPath: string
-}): Promise<void> => {
+}) => {
   const cached: unknown = await file(embPath).json()
-  if (!isEmbeddingTable(cached)) throw new TypeError(`cached CLAP embeddings are malformed: ${embPath}`)
+  if (isEmbeddingTable(cached) === false) throw new TypeError(`cached CLAP embeddings are malformed: ${embPath}`)
   for (const [k, v] of Object.entries(cached)) embeddings.set(k, v)
 }
 const computeEmbeddings = async ({
@@ -101,7 +105,7 @@ const computeEmbeddings = async ({
   embeddings: Map<string, number[]>
   embPath: string
   work: FontWork
-}): Promise<void> => {
+}) => {
   const rendered = await renderFont({
     fontPath: work.fontPath,
     sampleRate: CLAP_SAMPLE_RATE,
@@ -124,7 +128,7 @@ const ensureEmbeddings = async ({
 }: {
   embeddings: Map<string, number[]>
   work: FontWork
-}): Promise<void> => {
+}) => {
   const embPath = join(work.paths.cache, 'clap', work.paths.renderer, `${work.upstream.sha256}.json`)
   await ((await file(embPath).exists())
     ? loadEmbeddings({ embPath, embeddings })
@@ -380,7 +384,11 @@ const grandTones = async ({
   }
   const byRoot = new Map<string, SourcePreset[]>()
   for (const { p } of scored) byRoot.set(find(p.key), [...(byRoot.get(find(p.key)) ?? []), p])
-  const mean = (ms: SourcePreset[]): number => ms.reduce((t, m) => t + (scoreOf.get(m.key) ?? 0), 0) / ms.length
+  const mean = (ms: SourcePreset[]): number => {
+    let total = 0
+    for (const m of ms) total += scoreOf.get(m.key) ?? 0
+    return total / ms.length
+  }
   const components = [...byRoot.values()]
     .map(ms => ms.toSorted((x, y) => (scoreOf.get(x.key) ?? 0) - (scoreOf.get(y.key) ?? 0) || byCodeUnit(x.key, y.key)))
     .toSorted((x, y) => mean(x) - mean(y) || byCodeUnit(x[0]?.key ?? '', y[0]?.key ?? ''))
@@ -490,7 +498,7 @@ const stageSource = async ({
   paths: Paths
   stageDir: string
   u: UpstreamFile
-}): Promise<void> => {
+}) => {
   const bank = await loadFont(join(paths.input, u.path))
   const byKey = new Map(bank.presets.map(p => [presetKey({ slot: slotOf(p), sourceFile: u.path }), p]))
   const stage = new BasicSoundBank('sf2', false)
@@ -542,7 +550,7 @@ const writeFont = async ({
   paths: Paths
   shaOf: Map<string, string>
   stageDir: string
-}): Promise<void> => {
+}) => {
   const sources = await loadStaged({ font, names, shaOf, stageDir })
   const familyFont: FamilyFont = {
     bank: font.bank,
@@ -557,16 +565,75 @@ const writeFont = async ({
   log(`wrote ${font.fileName}.sf2: ${font.members.length} presets`)
   gc(true)
 }
+const fontRecordPath = (paths: Paths, kind: 'written' | 'proved', fileName: string): string =>
+  join(paths.cache, kind, `${fileName}.json`)
+const readFontRecord = async (recordPath: string): Promise<FontRecord | undefined> => {
+  const cached = file(recordPath)
+  if ((await cached.exists()) === false) return undefined
+  try {
+    const value: unknown = await cached.json()
+    if (typeof value === 'object' && value !== null && 'fontKey' in value && 'sha256' in value) {
+      const { fontKey, sha256 } = value
+      if (typeof fontKey === 'string' && typeof sha256 === 'string') return { fontKey, sha256 }
+    }
+  } catch (recordError) {
+    if ((recordError instanceof SyntaxError) === false) throw recordError
+  }
+  return undefined
+}
+const outputSha256 = async (fontPath: string): Promise<string> => {
+  const hasher = new CryptoHasher('sha256')
+  for await (const chunk of file(fontPath).stream()) hasher.update(chunk)
+  return hasher.digest('hex')
+}
+const clearStaleOutputs = async (paths: Paths, plan: Planned[]) => {
+  const plannedFiles = new Set(plan.map(font => `${font.fileName}.sf2`))
+  const entries = await readdir(paths.output, { withFileTypes: true })
+  for (const entry of entries) {
+    if (
+      (entry.isFile() || entry.isSymbolicLink()) &&
+      entry.name.endsWith('.sf2') &&
+      plannedFiles.has(entry.name) === false
+    ) {
+      const fileName = entry.name.slice(0, -'.sf2'.length)
+      await rm(fontRecordPath(paths, 'written', fileName), { force: true })
+      await rm(fontRecordPath(paths, 'proved', fileName), { force: true })
+      await rm(join(paths.output, entry.name), { force: true })
+      log(`deleted ${entry.name}`)
+    }
+  }
+}
 const stageAndWrite = async ({
-  plan,
   paths,
+  plan,
   upstream
 }: {
   paths: Paths
   plan: Planned[]
   upstream: UpstreamFile[]
-}): Promise<void> => {
-  const wanted = wantedBySource(plan)
+}): Promise<Map<string, FontRecord>> => {
+  const patch = await file(join(import.meta.dirname, '../../../patches/spessasynth_core@4.4.12.patch')).text()
+  const records = new Map<string, FontRecord>()
+  const toWrite: { font: Planned; fontKey: string }[] = []
+  for (const font of plan) {
+    const fontKey = new CryptoHasher('sha256')
+      .update(JSON.stringify([paths.renderer, font.fileName, font.bank, font.members.map(m => [m.key, m.name])]))
+      .update(UPSTREAM.commit)
+      .update(patch)
+      .digest('hex')
+    const previous = await readFontRecord(fontRecordPath(paths, 'written', font.fileName))
+    const fontPath = join(paths.output, `${font.fileName}.sf2`)
+    if (
+      previous?.fontKey === fontKey &&
+      (await file(fontPath).exists()) &&
+      previous.sha256 === (await outputSha256(fontPath))
+    ) {
+      records.set(font.fileName, previous)
+    } else toWrite.push({ font, fontKey })
+  }
+  await mkdir(paths.output, { recursive: true })
+  if (toWrite.length === 0) return records
+  const wanted = wantedBySource(toWrite.map(({ font }) => font))
   const stageDir = join(paths.cache, 'stage')
   await mkdir(stageDir, { recursive: true })
   const toStage = upstream.flatMap(u => {
@@ -577,30 +644,48 @@ const stageAndWrite = async ({
   for (const { needs, u } of toStage) await stageSource({ names, needs, paths, stageDir, u })
   const shaOf = new Map(upstream.map(u => [u.path, u.sha256]))
   const creationDate = new Date(UPSTREAM.commitDate)
-  await mkdir(paths.output, { recursive: true })
-  for (const font of plan) await writeFont({ creationDate, font, names, paths, shaOf, stageDir })
+  await mkdir(join(paths.cache, 'written'), { recursive: true })
+  for (const { font, fontKey } of toWrite) {
+    await writeFont({ creationDate, font, names, paths, shaOf, stageDir })
+    const sha256 = await outputSha256(join(paths.output, `${font.fileName}.sf2`))
+    const record = { fontKey, sha256 }
+    await write(fontRecordPath(paths, 'written', font.fileName), JSON.stringify(record))
+    records.set(font.fileName, record)
+  }
+  return records
 }
 const proveOutput = async ({
   isDrumKey,
   paths,
   plan,
-  readSource
+  readSource,
+  records
 }: {
   isDrumKey: Set<string>
   paths: Paths
   plan: Planned[]
-  readSource: (key: string) => Promise<Float32Array[]>
-}): Promise<void> => {
-  const failures: string[] = []
-  for (const font of plan) {
+  readSource: Sounds['readSource']
+  records: Map<string, FontRecord>
+}) => {
+  await mkdir(join(paths.cache, 'proved'), { recursive: true })
+  const proveFont = async (font: Planned): Promise<string[]> => {
+    const record = records.get(font.fileName)
+    if (record === undefined) throw new Error(`no written record for ${font.fileName}`)
+    const recordPath = fontRecordPath(paths, 'proved', font.fileName)
+    const previous = await readFontRecord(recordPath)
+    if (previous?.fontKey === record.fontKey && previous.sha256 === record.sha256) {
+      log(`proved ${font.fileName}: unchanged`)
+      return []
+    }
     const fontPath = join(paths.output, `${font.fileName}.sf2`)
     const slots = font.members.map((m, program) => ({ bank: font.bank, isDrum: isDrumKey.has(m.key), program }))
     const rendered = await renderFont({
       fontPath,
       sampleRate: NULL_SAMPLE_RATE,
       slots,
-      workDir: join(paths.cache, 'work')
+      workDir: join(paths.cache, 'work', font.fileName)
     })
+    const failures: string[] = []
     let exact = 0
     let worst = SILENT_DB
     for (const [index, m] of font.members.entries()) {
@@ -611,6 +696,22 @@ const proveOutput = async ({
         failures.push(`${font.fileName}/${m.name} from ${m.key}: null ${db.toFixed(1)} dB, not bit-exact`)
     }
     log(`proved ${font.fileName}: ${exact} of ${font.members.length} bit-exact, worst null ${worst.toFixed(1)} dB`)
+    if (failures.length === 0) await write(recordPath, JSON.stringify(record))
+    return failures
+  }
+  const failures: string[] = []
+  const renderLimit = 4
+  let offset = 0
+  while (offset < plan.length) {
+    const batch = await Promise.allSettled(plan.slice(offset, offset + renderLimit).map(proveFont))
+    for (const result of batch) {
+      if (result.status === 'rejected') {
+        const proofError: unknown = result.reason
+        throw proofError
+      }
+      failures.push(...result.value)
+    }
+    offset += renderLimit
   }
   if (failures.length > 0) throw new Error(`output does not sound like its source:\n${failures.join('\n')}`)
 }
@@ -646,20 +747,43 @@ const checkedNames = async ({
   await write(join(paths.cache, 'name-problems.tsv'), `${report}\n`)
   throw new Error(`${problems.length} names need hand-table.ts entries; see ${join(paths.cache, 'name-problems.tsv')}`)
 }
+const finalTarget = ({ intoOf, key }: { intoOf: Map<string, string>; key: string }): string => {
+  const seen = new Set<string>()
+  let current = key
+  let next = intoOf.get(current)
+  while (next !== undefined) {
+    if (seen.has(current)) throw new Error(`merge cycle through ${current}`)
+    seen.add(current)
+    current = next
+    next = intoOf.get(current)
+  }
+  return current
+}
+const resolvedMerges = ({ merges, plan }: { merges: Merge[]; plan: Planned[] }) => {
+  const shipped = new Set(plan.flatMap(f => f.members.map(m => m.key)))
+  const intoOf = new Map(merges.map(m => [m.key, m.into]))
+  return merges.map((m: Merge) => {
+    const into = finalTarget({ intoOf, key: m.key })
+    if (!shipped.has(into) && DROPPED_SOUNDS[into] === undefined)
+      throw new Error(`merge of ${m.key} ends at ${into}, which neither ships nor is dropped`)
+    return {
+      into,
+      ...(Number.isNaN(m.nullDb) ? {} : { nullDb: m.nullDb }),
+      reason: into === m.into ? m.reason : `${m.reason}; ${m.into} merged further into ${into}`,
+      source: m.key
+    }
+  })
+}
 const writeManifest = async ({ merges, paths, plan }: { merges: Merge[]; paths: Paths; plan: Planned[] }) => {
   const manifest = {
+    dropped: Object.entries(DROPPED_SOUNDS).map(([source, reason]) => ({ reason, source })),
     excluded: UPSTREAM.excluded,
     fonts: plan.map(f => ({
       bank: f.bank,
       file: `${f.fileName}.sf2`,
       presets: f.members.map((m, program) => ({ name: m.name, program, source: m.key }))
     })),
-    merges: merges.map((m: Merge) => ({
-      into: m.into,
-      ...(Number.isNaN(m.nullDb) ? {} : { nullDb: m.nullDb }),
-      reason: m.reason,
-      source: m.key
-    })),
+    merges: resolvedMerges({ merges, plan }),
     upstream: { commit: UPSTREAM.commit, dataset: UPSTREAM.dataset }
   }
   await write(join(paths.output, 'manifest.json'), `${JSON.stringify(manifest, undefined, 2)}\n`)
@@ -673,7 +797,12 @@ const main = async () => {
   }
   log(`renderer key ${paths.renderer}`)
   const upstream = await verifiedUpstream(paths)
-  const sounds = await analyseAndDedupe({ paths, upstream })
+  const analysed = await analyseAndDedupe({ paths, upstream })
+  const sounds = { ...analysed, kept: analysed.kept.filter(p => DROPPED_SOUNDS[p.key] === undefined) }
+  const missingDrops = Object.keys(DROPPED_SOUNDS).filter(
+    k => analysed.kept.some(p => p.key === k) === false && analysed.merges.some(m => m.key === k) === false
+  )
+  if (missingDrops.length > 0) throw new Error(`dropped sounds not found upstream: ${missingDrops.join(', ')}`)
   const labelled = labelAll({ embeddings: sounds.embeddings, presets: sounds.kept })
   await write(join(paths.cache, 'ambiguities.json'), JSON.stringify(labelled.ambiguities, undefined, 2))
   await write(
@@ -699,9 +828,10 @@ const main = async () => {
     recordingBytes: sounds.recordingBytes,
     tones
   })
-  await stageAndWrite({ paths, plan, upstream })
+  const records = await stageAndWrite({ paths, plan, upstream })
+  await clearStaleOutputs(paths, plan)
   const isDrumKey = new Set(sounds.kept.filter(p => p.slot.isDrum).map(p => p.key))
-  await proveOutput({ isDrumKey, paths, plan, readSource: sounds.readSource })
+  await proveOutput({ isDrumKey, paths, plan, readSource: sounds.readSource, records })
   await writeManifest({ merges: sounds.merges, paths, plan })
   log(`ok: ${plan.length} fonts, ${sounds.kept.length} sounds`)
 }

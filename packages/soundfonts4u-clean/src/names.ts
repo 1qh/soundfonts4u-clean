@@ -117,10 +117,16 @@ const DESCRIPTORS = [
   'Wet',
   'Wide'
 ] as const
+const SOUND_ABBREVIATIONS = new Set(['CR', 'DX', 'EP', 'FM', 'SD', 'SFX', 'TR'])
+const SPELLED: Readonly<Record<string, string>> = { brt: 'bright' }
+const isSourceAbbreviation = (w: string): boolean =>
+  w.length === 1 || (w.length <= 3 && w === w.toUpperCase() && !SOUND_ABBREVIATIONS.has(w))
 const baseName = ({ family, p }: { family: Family | undefined; p: SourcePreset }): string => {
   const implied = new Set(family === undefined ? [] : (FAMILY_WORDS[family] ?? []))
-  const all = words(p.name)
-  return camel(all.filter(w => !(implied.has(w.toLowerCase()) || NOT_THE_SOUND.has(w.toLowerCase()))))
+  const all = words(p.name).map(w => SPELLED[w.toLowerCase()] ?? w)
+  return camel(
+    all.filter(w => !(implied.has(w.toLowerCase()) || NOT_THE_SOUND.has(w.toLowerCase()) || isSourceAbbreviation(w)))
+  )
 }
 interface NameProblem {
   key: string
@@ -244,4 +250,4 @@ const assignNames = async ({
   return { names, problems: findProblems({ names, presets }) }
 }
 export type { NameProblem }
-export { assignNames, MAX_NAME_LENGTH }
+export { assignNames, isSourceAbbreviation, MAX_NAME_LENGTH }
