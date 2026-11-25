@@ -42,7 +42,10 @@ const KEYWORDS: readonly (readonly [Family, readonly RegExp[]])[] = [
   ['Harpsichord', [/harpsi|clav|cembalo/iv]],
   [
     'Piano',
-    [/grand|steinway|yamaha|bosendorfer|fazioli|chateau|salamander|piano|\bc5\b|\bs6\b|mod\w*\s?b\b|\bs\s?s\b|mason/iv]
+    [
+      /grand|steinway|yamaha|bosendorfer|fazioli|chateau|salamander|piano|\bc5\b|\bs6\b|mod\w*\s?b\b|\bs\s?s\b|mason/iv,
+      /\bdyn\s?ch\b|\bd\s?ch\s?g\b|\bstudio\s?ch\b/iv
+    ]
   ],
   [
     'Mallets',
@@ -60,7 +63,7 @@ const KEYWORDS: readonly (readonly [Family, readonly RegExp[]])[] = [
     ]
   ],
   ['Bass', [/bass/iv]],
-  ['Strings', [/string|\bstr\b|violin|viola|cello|pizz|ensemble|orchestra/iv]],
+  ['Strings', [/string|\bstr\b|violin|viola|cello|pizz|ensemble|orchestra(?!\s?hit)/iv]],
   ['Harp', [/harp/iv]],
   ['Choir', [/choir|vocal|voice|aah|ooh|vox/iv]],
   ['Brass', [/brass|trumpet|trombone|(?<!english\s?)horn|tuba/iv]],

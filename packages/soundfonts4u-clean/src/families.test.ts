@@ -88,3 +88,11 @@ describe('layer families', () => {
     expect(keywordFamilies('Steel Drums')).not.toContain('Drums')
   })
 })
+describe('chateau abbreviations and stabs', () => {
+  test.each(['Dyn Ch+Strings', 'D Ch G+Low Strings', 'Studio Ch + Pad'])('reads %s as a piano layer', name => {
+    expect(leadInstrument({ candidates: keywordFamilies(name), name })).toBe('Piano')
+  })
+  test('reads an orchestra hit as an effect, not strings', () => {
+    expect(keywordFamilies('Orchestra Hit')).toStrictEqual(['Fx'])
+  })
+})
