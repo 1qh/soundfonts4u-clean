@@ -11,7 +11,7 @@ import type { SourcePreset } from './fonts.js'
 import type { PresetSlot } from './render.js'
 import type { UpstreamFile } from './upstream.js'
 import type { FamilyFont } from './write.js'
-import { dedupe, NULL_THRESHOLD_DB, nullDb } from './dedupe.js'
+import { dedupe, NULL_THRESHOLD_DB, nullDb, SILENT_DB } from './dedupe.js'
 import { CLAP_SAMPLE_RATE, cosineDistance, createEmbedder, embedTexts, toMono } from './embed.js'
 import { labelAll, placeLayers, topicOf } from './families.js'
 import { byCodeUnit, listPresets, loadFont, presetKey, slotOf } from './fonts.js'
@@ -601,11 +601,15 @@ const proveOutput = async ({
       slots,
       workDir: join(paths.cache, 'work')
     })
+    let exact = 0
+    let worst = SILENT_DB
     for (const [index, m] of font.members.entries()) {
       const db = nullDb(segmentOf({ index, rendered }), await readSource(m.key))
+      if (db === SILENT_DB) exact += 1
+      worst = Math.max(worst, db)
       if (db > NULL_THRESHOLD_DB) failures.push(`${font.fileName}/${m.name} from ${m.key}: null ${db.toFixed(1)} dB`)
     }
-    log(`proved ${font.fileName}`)
+    log(`proved ${font.fileName}: ${exact} of ${font.members.length} bit-exact, worst null ${worst.toFixed(1)} dB`)
   }
   if (failures.length > 0) throw new Error(`output does not sound like its source:\n${failures.join('\n')}`)
 }
