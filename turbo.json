@@ -1,0 +1,27 @@
+{
+  "agentGuidance": false,
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build": {
+      "outputs": ["dist/**", ".next/**", ".source/**"]
+    },
+    "check": {
+      "dependsOn": ["build"]
+    },
+    "clean": {
+      "cache": false
+    },
+    "fix": {
+      "dependsOn": ["build"],
+      "cache": false
+    },
+    "smoke": {
+      "dependsOn": ["build"],
+      "cache": false
+    },
+    "test": {
+      "dependsOn": ["build"],
+      "cache": false
+    }
+  }
+}

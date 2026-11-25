@@ -1,0 +1,19 @@
+{
+  "name": "soundfonts4u-clean",
+  "private": true,
+  "description": "Rebuild pipeline: verify, render, dedupe, label, order, name and write the family fonts",
+  "type": "module",
+  "scripts": {
+    "rebuild": "bun src/cli.ts",
+    "test": "bun test src"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "latest",
+    "audio-decode": "latest",
+    "ml-hclust": "latest",
+    "spessasynth_core": "latest"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

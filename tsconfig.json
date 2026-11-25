@@ -1,4 +1,6 @@
 {
   "extends": "lintmax/tsconfig",
-  "include": ["src", "test"]
+  "compilerOptions": {
+    "types": ["bun-types"]
+  }
 }

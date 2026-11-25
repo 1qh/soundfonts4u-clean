@@ -3,14 +3,36 @@
   "private": true,
   "description": "Deterministic rebuild of the soundfonts4u SF2 collection into flat, deduplicated, uniquely named family fonts",
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "build": "bun src/build.ts",
+    "action": "sh up.sh",
+    "build": "bash -c \"turbo build --output-logs=errors-only 2> >(grep -vE 'WARNING|Could not resolve workspaces?|missing field|Turborepo will still function' >&2)\"",
     "check": "lintmax check",
-    "fix": "lintmax fix"
+    "clean": "sh clean.sh",
+    "fix": "lintmax fix",
+    "postinstall": "sherif -i typescript",
+    "prepare": "bunx simple-git-hooks"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "sh up.sh && git add -u"
   },
   "devDependencies": {
-    "@types/bun": "latest",
     "lintmax": "latest",
-    "typescript": "6.0"
-  }
+    "sherif": "latest",
+    "simple-git-hooks": "latest",
+    "tsdown": "latest",
+    "turbo": "latest",
+    "typescript": "6.0",
+    "unrun": "latest"
+  },
+  "packageManager": "bun@1.4.5",
+  "trustedDependencies": [
+    "esbuild",
+    "lintmax",
+    "msw",
+    "sharp",
+    "simple-git-hooks"
+  ]
 }
