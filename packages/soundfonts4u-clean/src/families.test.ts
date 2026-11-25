@@ -53,7 +53,7 @@ describe('topicOf', () => {
   })
 })
 describe('drum topics', () => {
-  test.each(['Timpani', 'Taiko Drum', 'Reverse Cymbal', 'Melodic Tom 2', 'Wood Block', 'SFX', 'Castanets'])(
+  test.each(['Windchimes', 'Timpani', 'Taiko Drum', 'Reverse Cymbal', 'Melodic Tom 2', 'Wood Block', 'SFX', 'Castanets'])(
     'files %s under Percussion',
     name => {
       expect(topicOf({ family: 'Drums', name })).toBe('Percussion')

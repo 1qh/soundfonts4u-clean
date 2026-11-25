@@ -316,7 +316,7 @@ const LAYER_WORD = /\blayer/iv
 const PIANO_LAYER = /\+|\blayer|\bpad\b|\bstr(?:ings?)?\b|chamber|orch|\bbell|&\s*(?:str|fm|pad)/iv
 const PERCUSSION_PATTERNS = [
   /tambour|snap|castan|cymbal|\bcym\b|reverse|\btoms?\b|wood\s?block|timpani|taiko|melodic|synth drum|concert/iv,
-  /bass drum|\bsfx\b|crash|\bsd\b|kick|bongo|conga|agogo|cowbell|triangle|shaker|clap/iv
+  /wind\s?chime|bass drum|\bsfx\b|crash|\bsd\b|kick|bongo|conga|agogo|cowbell|triangle|shaker|clap/iv
 ]
 const UPRIGHT = /upright|honky|tonk|\bcp\s?80\b/iv
 const isPercussionName = (name: string): boolean => {
