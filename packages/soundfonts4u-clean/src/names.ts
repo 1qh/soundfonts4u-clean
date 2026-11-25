@@ -138,18 +138,46 @@ const baseNames = ({ labels, presets }: { labels: Map<string, Family>; presets: 
   for (const p of presets) names.set(p.key, HAND_NAMES[p.key] ?? baseName({ family: labels.get(p.key), p }))
   return names
 }
-const collidingDerived = ({ names, presets }: { names: Map<string, string>; presets: SourcePreset[] }): SourcePreset[] => {
-  const collisions = new Map<string, SourcePreset[]>()
+const groupByName = ({
+  names,
+  presets
+}: {
+  names: Map<string, string>
+  presets: SourcePreset[]
+}): Map<string, SourcePreset[]> => {
+  const groups = new Map<string, SourcePreset[]>()
   for (const p of presets) {
     const n = names.get(p.key) ?? ''
-    collisions.set(n, [...(collisions.get(n) ?? []), p])
+    groups.set(n, [...(groups.get(n) ?? []), p])
   }
+  return groups
+}
+const collidingDerived = ({ names, presets }: { names: Map<string, string>; presets: SourcePreset[] }): SourcePreset[] => {
+  const collisions = groupByName({ names, presets })
   return [...collisions.entries()]
     .filter(([name, group]) => group.length > 1 || name.length === 0)
     .map(([, group]) => group)
     .flatMap(group => group.filter(g => HAND_NAMES[g.key] === undefined))
 }
 const similarity = (a: number[], b: number[]): number => 1 - cosineDistance(a, b)
+interface DescriptorPair {
+  key: string
+  score: number
+  word: string
+}
+const chooseDescriptors = (pairs: DescriptorPair[]): Map<string, string> => {
+  const sorted = pairs.toSorted((a, b) => b.score - a.score || a.key.localeCompare(b.key) || a.word.localeCompare(b.word))
+  const candidates = sorted.filter(pair => pair.word.length > 0)
+  const chosen = new Map<string, string>()
+  const usedWords = new Set<string>()
+  const choose = ({ key, word }: DescriptorPair) => {
+    if (chosen.has(key) || usedWords.has(word)) return
+    chosen.set(key, word)
+    usedWords.add(word)
+  }
+  for (const pair of candidates) choose(pair)
+  return chosen
+}
 const pickDescriptors = ({
   group,
   words: wordVectors
@@ -157,7 +185,11 @@ const pickDescriptors = ({
   group: { embedding: number[]; key: string }[]
   words: number[][]
 }): Map<string, string> => {
-  const mean = wordVectors.map(w => group.reduce((acc, m) => acc + similarity(m.embedding, w), 0) / group.length)
+  const mean = wordVectors.map(w => {
+    let total = 0
+    for (const m of group) total += similarity(m.embedding, w)
+    return total / group.length
+  })
   const pairs = group.flatMap(m =>
     wordVectors.map((w, wi) => ({
       key: m.key,
@@ -165,15 +197,7 @@ const pickDescriptors = ({
       word: DESCRIPTORS[wi] ?? ''
     }))
   )
-  const sorted = pairs.toSorted((a, b) => b.score - a.score || a.key.localeCompare(b.key) || a.word.localeCompare(b.word))
-  const chosen = new Map<string, string>()
-  const usedWords = new Set<string>()
-  for (const pair of sorted.filter(x => x.word.length > 0))
-    if (!(chosen.has(pair.key) || usedWords.has(pair.word))) {
-      chosen.set(pair.key, pair.word)
-      usedWords.add(pair.word)
-    }
-  return chosen
+  return chooseDescriptors(pairs)
 }
 const addDescriptors = async ({
   embeddings,
@@ -184,11 +208,8 @@ const addDescriptors = async ({
   names: Map<string, string>
   presets: SourcePreset[]
 }) => {
-  const groups = new Map<string, SourcePreset[]>()
-  for (const p of collidingDerived({ names, presets })) {
-    const n = names.get(p.key) ?? ''
-    groups.set(n, [...(groups.get(n) ?? []), p])
-  }
+  const collidingPresets = collidingDerived({ names, presets })
+  const groups = groupByName({ names, presets: collidingPresets })
   if (groups.size === 0) return
   const wordVectors = await embedTexts(DESCRIPTORS.map(d => `a ${d.toLowerCase()} sound`))
   for (const group of groups.values()) {
@@ -220,7 +241,6 @@ const findProblems = ({ names, presets }: { names: Map<string, string>; presets:
   }
   return problems
 }
-const DESCRIPTOR_PASSES = 4
 const SHORT_FORMS: readonly (readonly [RegExp, string])[] = [
   [/Tremolo|Trm/gv, 'Trem'],
   [/Dynamic/gv, 'Dyn'],
@@ -245,7 +265,11 @@ const assignNames = async ({
   presets: SourcePreset[]
 }): Promise<{ names: Map<string, string>; problems: NameProblem[] }> => {
   const names = baseNames({ labels, presets })
-  for (let pass = 0; pass < DESCRIPTOR_PASSES; pass += 1) await addDescriptors({ embeddings, names, presets })
+  const descriptorInputs = { embeddings, names, presets }
+  await addDescriptors(descriptorInputs)
+  await addDescriptors(descriptorInputs)
+  await addDescriptors(descriptorInputs)
+  await addDescriptors(descriptorInputs)
   for (const [key, name] of names) if (name.length > MAX_NAME_LENGTH) names.set(key, shorten(name))
   return { names, problems: findProblems({ names, presets }) }
 }

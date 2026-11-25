@@ -1,3 +1,4 @@
+/* eslint-disable no-await-in-loop */
 import { file, spawn, write } from 'bun'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -15,7 +16,7 @@ interface ManifestPreset {
 const REVIEW_RATE = 44_100
 const ENCODE_TIMEOUT_MS = 600_000
 const isManifest = (value: unknown): value is { fonts: ManifestFont[] } =>
-  typeof value === 'object' && value !== null && Array.isArray((value as { fonts?: unknown }).fonts)
+  typeof value === 'object' && value !== null && 'fonts' in value && Array.isArray(value.fonts)
 const clock = (seconds: number): string =>
   `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`
 const nameTable = (font: ManifestFont): string => {
@@ -30,7 +31,7 @@ const nameTable = (font: ManifestFont): string => {
     ''
   ].join('\n')
 }
-const encode = async ({ m4a, wav }: { m4a: string; wav: string }): Promise<void> => {
+const encode = async ({ m4a, wav }: { m4a: string; wav: string }) => {
   const proc = spawn({
     cmd: ['afconvert', '-f', 'm4af', '-d', 'aac', '-b', '160000', wav, m4a],
     stderr: 'pipe',
@@ -62,7 +63,8 @@ const main = async () => {
   await mkdir(outDir, { recursive: true })
   const header = `# Review\n\nEvery output sound by font, in picker order. Each sound plays for ${segmentSeconds()} seconds in that font's sample, starting at the time shown.\n\n`
   await write(join(outDir, 'names.md'), header + manifest.fonts.map(nameTable).join('\n'))
+  // biome-ignore lint/performance/noAwaitInLoops: Render and encode one font at a time to bound resource use.
   for (const font of manifest.fonts) await renderSample({ font, fontsDir, outDir })
-  console.log('ok')
+  process.stdout.write('ok\n')
 }
 await main()

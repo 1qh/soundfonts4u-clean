@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { Family } from './families.js'
-import { keywordFamilies, topicOf } from './families.js'
+import { keywordFamilies, leadInstrument, topicOf } from './families.js'
+import { byCodeUnit } from './fonts.js'
 const cases: { name: string; title: string; want: Family }[] = [
   { name: 'DreamyEP', title: 'an electric piano glued to an adjective', want: 'EPiano' },
   { name: 'BigRoom', title: 'a drum room glued to an adjective', want: 'Drums' },
@@ -16,7 +17,7 @@ describe('keywordFamilies', () => {
     expect(keywordFamilies(name)).toContain(want)
   })
   test('offers every family a name matches so none is chosen by keyword order', () => {
-    expect(keywordFamilies('Steel Drums').toSorted()).toStrictEqual(['Acoustic', 'Drums', 'Mallets'])
+    expect(keywordFamilies('Steel Drums').toSorted(byCodeUnit)).toStrictEqual(['Acoustic', 'Mallets'])
   })
   test.each(['Bowed Glass', 'Car-Pass', 'Brightness', 'Finger Bass'])(
     'does not read the letters ss inside %s as a piano maker',
@@ -52,9 +53,12 @@ describe('topicOf', () => {
   })
 })
 describe('drum topics', () => {
-  test.each(['Timpani', 'Taiko Drum', 'Reverse Cymbal', 'Melodic Tom 2', 'Wood Block', 'SFX', 'Castanets'])('files %s under Percussion', name => {
-    expect(topicOf({ family: 'Drums', name })).toBe('Percussion')
-  })
+  test.each(['Timpani', 'Taiko Drum', 'Reverse Cymbal', 'Melodic Tom 2', 'Wood Block', 'SFX', 'Castanets'])(
+    'files %s under Percussion',
+    name => {
+      expect(topicOf({ family: 'Drums', name })).toBe('Percussion')
+    }
+  )
   test.each(['Standard Kit 1', 'Room', 'Jazz', 'TR-808', 'Brush Drums', 'Orchestra Kit'])('files %s under Drums', name => {
     expect(topicOf({ family: 'Drums', name })).toBe('Drums')
   })
@@ -69,5 +73,18 @@ describe('keyword edges', () => {
   test('files a tambourine and a wind chime as percussion', () => {
     expect(keywordFamilies('Tambourine')).toStrictEqual(['Drums'])
     expect(keywordFamilies('Windchimes')).toStrictEqual(['Drums'])
+  })
+})
+describe('layer families', () => {
+  test.each([
+    ['YamC5+Strings', 'Piano'],
+    ['DX7+LowStrings', 'EPiano'],
+    ['Harp(EW)+Chambr Str', 'Harp'],
+    ['Nylon G+Chamber Str', 'Nylon']
+  ] as const)('files %s under the instrument before the plus', (name, want) => {
+    expect(leadInstrument({ candidates: keywordFamilies(name), name })).toBe(want)
+  })
+  test('reads steel drums as pitched mallets, not a kit', () => {
+    expect(keywordFamilies('Steel Drums')).not.toContain('Drums')
   })
 })

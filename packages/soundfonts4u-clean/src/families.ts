@@ -31,14 +31,23 @@ type Family = (typeof FAMILIES)[number]
 const KEYWORDS: readonly (readonly [Family, readonly RegExp[]])[] = [
   ['Fx', [/\bhit\b/iv]],
   ['Organ', [/organ|hammond|\bb3\b|rotary|leslie|drawbar|\bpipe\s|church|harmonium|accord|melodica|plein|\bjeu\b/iv]],
-  ['Drums', [/drum|kit\b|perc|standard|\broom\b|power|brush|electronic|\btr\s?\d|timpani|cymbal|snare|tom\b|tambourine|wind\s?chime/iv]],
+  [
+    'Drums',
+    [
+      /(?<!steel\s?)drum|kit\b|perc|standard|\broom\b|power|brush|electronic/iv,
+      /\btr\s?\d|timpani|cymbal|snare|tom\b|tambourine|wind\s?chime/iv
+    ]
+  ],
   ['EPiano', [/rhodes|wurli|\bep\b|\be\s?piano|elec\w*\s*piano|dx\s?7|fm\s.*piano|suitcase|tine/iv]],
   ['Harpsichord', [/harpsi|clav|cembalo/iv]],
   [
     'Piano',
     [/grand|steinway|yamaha|bosendorfer|fazioli|chateau|salamander|piano|\bc5\b|\bs6\b|mod\w*\s?b\b|\bs\s?s\b|mason/iv]
   ],
-  ['Mallets', [/vibra|marimba|xylo|glock|celesta|bell|(?<!wind\s?)chime|music\s?box|dulcimer|kalimba|steel\s?drum|tubular/iv]],
+  [
+    'Mallets',
+    [/vibra|marimba|xylo|glock|celesta|bell|(?<!wind\s?)chime|music\s?box|dulcimer|kalimba|steel\s?drum|tubular/iv]
+  ],
   ['Nylon', [/nylon|classic\w*\s*g|spanish/iv]],
   ['Acoustic', [/steel|acoustic\s*g|12\s?string|folk|finger\s?pick/iv]],
   [
@@ -115,8 +124,9 @@ const keywordFamilies = (name: string): Family[] => {
   const hits = KEYWORDS.filter(([, patterns]) => patterns.some(pattern => pattern.test(spaced))).map(([f]) => f)
   return [...new Set(hits)]
 }
+const SF2_EXTENSION = /\.sf2$/iv
 const sourceFileFamily = (sourceFile: string): Family | undefined => {
-  const hits = keywordFamilies(sourceFile.replace(/\.sf2$/iv, ''))
+  const hits = keywordFamilies(sourceFile.replace(SF2_EXTENSION, ''))
   return hits.length === 1 ? hits[0] : undefined
 }
 const fallbackFamily = (p: SourcePreset): Family | undefined => {
@@ -171,6 +181,37 @@ const closestFamily = ({
   })
   return scored.toSorted((a, b) => a.d - b.d || byCodeUnit(a.f, b.f))[0]?.f
 }
+const LAYER_JOINERS = ['+', '&'] as const
+const leadInstrument = ({ candidates, name }: { candidates: Family[]; name: string }): Family | undefined => {
+  const [lead] = name.replaceAll('&', '+').split('+')
+  if (lead === undefined || lead === name) return undefined
+  const hits = keywordFamilies(lead).filter(f => candidates.includes(f))
+  return hits.length === 1 ? hits[0] : undefined
+}
+const resolveAmbiguity = ({
+  centroids,
+  embeddings,
+  p
+}: {
+  centroids: Map<Family, number[]>
+  embeddings: Map<string, number[]>
+  p: SourcePreset
+}): Ambiguity => {
+  const candidates = keywordFamilies(p.name)
+  const embedding = embeddings.get(p.key)
+  const gm = GM_LAYOUT_FONTS.has(p.sourceFile) && !p.slot.isDrum ? gmFamily(p.slot.program) : undefined
+  const byProgram = gm !== undefined && candidates.includes(gm) ? gm : undefined
+  const instrument =
+    candidates.length === 2 && candidates.includes('Synth') ? candidates.find(c => c !== 'Synth') : undefined
+  const chosen =
+    byProgram ??
+    leadInstrument({ candidates, name: p.name }) ??
+    instrument ??
+    (embedding === undefined ? undefined : closestFamily({ candidates, centroids, embedding }))
+  if (chosen === undefined)
+    throw new Error(`cannot resolve family for ${p.key} (${p.name}) among ${candidates.join(', ')}`)
+  return { candidates, chosen, key: p.key, name: p.name }
+}
 const labelAll = ({
   embeddings,
   presets
@@ -184,16 +225,9 @@ const labelAll = ({
   const centroids = familyCentroids({ embeddings, labels })
   const ambiguities: Ambiguity[] = []
   for (const p of ambiguous) {
-    const candidates = keywordFamilies(p.name)
-    const embedding = embeddings.get(p.key)
-    const gm = GM_LAYOUT_FONTS.has(p.sourceFile) && !p.slot.isDrum ? gmFamily(p.slot.program) : undefined
-    const byProgram = gm !== undefined && candidates.includes(gm) ? gm : undefined
-    const instrument = candidates.length === 2 && candidates.includes('Synth') ? candidates.find(c => c !== 'Synth') : undefined
-    const chosen = byProgram ?? instrument ?? (embedding === undefined ? undefined : closestFamily({ candidates, centroids, embedding }))
-    if (chosen === undefined)
-      throw new Error(`cannot resolve family for ${p.key} (${p.name}) among ${candidates.join(', ')}`)
-    labels.set(p.key, chosen)
-    ambiguities.push({ candidates, chosen, key: p.key, name: p.name })
+    const ambiguity = resolveAmbiguity({ centroids, embeddings, p })
+    labels.set(p.key, ambiguity.chosen)
+    ambiguities.push(ambiguity)
   }
   return { ambiguities, labels }
 }
@@ -275,13 +309,20 @@ const runPass = ({ movable, placement }: { movable: SourcePreset[]; placement: P
   for (const p of movable) if (didMovePreset({ p, placement })) moves += 1
   return moves
 }
-const LAYER_MARK = /\+|&|\blayer/iv
+const LAYER_WORD = /\blayer/iv
 const PIANO_LAYER = /\+|\blayer|\bpad\b|\bstr(?:ings?)?\b|chamber|orch|\bbell|&\s*(?:str|fm|pad)/iv
-const PERCUSSION = /tambour|snap|castan|cymbal|\bcym\b|reverse|\btoms?\b|wood\s?block|timpani|taiko|melodic|synth drum|concert|bass drum|\bsfx\b|crash|\bsd\b|kick|bongo|conga|agogo|cowbell|triangle|shaker|clap/iv
+const PERCUSSION_PATTERNS = [
+  /tambour|snap|castan|cymbal|\bcym\b|reverse|\btoms?\b|wood\s?block|timpani|taiko|melodic|synth drum|concert/iv,
+  /bass drum|\bsfx\b|crash|\bsd\b|kick|bongo|conga|agogo|cowbell|triangle|shaker|clap/iv
+]
 const UPRIGHT = /upright|honky|tonk|\bcp\s?80\b/iv
+const isPercussionName = (name: string): boolean => {
+  const spaced = spacedWords(name)
+  return PERCUSSION_PATTERNS.some(pattern => pattern.test(spaced))
+}
 const FAMILY_TOPICS: Readonly<Partial<Record<Family, readonly (readonly [string, (name: string) => boolean])[]>>> = {
   Drums: [
-    ['Percussion', name => PERCUSSION.test(spacedWords(name))],
+    ['Percussion', isPercussionName],
     ['Drums', () => true]
   ],
   Piano: [
@@ -293,11 +334,11 @@ const FAMILY_TOPICS: Readonly<Partial<Record<Family, readonly (readonly [string,
 const topicOf = ({ family, name }: { family: Family; name: string }): string => {
   const topics = FAMILY_TOPICS[family]
   if (topics === undefined) return family
-  const hit = topics.find(([, test]) => test(name))
+  const hit = topics.find(([, matchesName]) => matchesName(name))
   if (hit === undefined) throw new Error(`no ${family} topic for ${name}`)
   return hit[0]
 }
-const isLayerName = (name: string): boolean => LAYER_MARK.test(name)
+const isLayerName = (name: string): boolean => LAYER_JOINERS.some(j => name.includes(j)) || LAYER_WORD.test(name)
 const placeLayers = ({
   labels,
   presets,
@@ -313,4 +354,4 @@ const placeLayers = ({
   return placement.placed
 }
 export type { Ambiguity, Family }
-export { FAMILIES, keywordFamilies, labelAll, placeLayers, topicOf }
+export { FAMILIES, keywordFamilies, labelAll, leadInstrument, placeLayers, topicOf }

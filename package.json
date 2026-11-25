@@ -28,14 +28,14 @@
     "unrun": "latest"
   },
   "packageManager": "bun@1.4.5",
+  "patchedDependencies": {
+    "spessasynth_core@4.4.12": "patches/spessasynth_core@4.4.12.patch"
+  },
   "trustedDependencies": [
     "esbuild",
     "lintmax",
     "msw",
     "sharp",
     "simple-git-hooks"
-  ],
-  "patchedDependencies": {
-    "spessasynth_core@4.4.12": "patches/spessasynth_core@4.4.12.patch"
-  }
+  ]
 }
