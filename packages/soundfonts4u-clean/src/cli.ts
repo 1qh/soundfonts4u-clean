@@ -4,11 +4,12 @@ import type { BasicPreset } from 'spessasynth_core'
 import { CryptoHasher, file, gc, write } from 'bun'
 import { mkdir, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { BasicSoundBank, SoundBankCloner } from 'spessasynth_core'
+import { BasicSoundBank } from 'spessasynth_core'
 import type { Merge } from './dedupe.js'
 import type { Family } from './families.js'
 import type { SourcePreset } from './fonts.js'
 import type { PresetSlot } from './render.js'
+import type { Wanted } from './stage.js'
 import type { UpstreamFile } from './upstream.js'
 import type { FamilyFont } from './write.js'
 import { dedupe, nullDb, SILENT_DB } from './dedupe.js'
@@ -19,6 +20,7 @@ import { DROPPED_SOUNDS, SUBFAMILY_NAMES } from './hand-table.js'
 import { assignNames } from './names.js'
 import { centroid, orderBySimilarity } from './order.js'
 import { rendererKey, renderFont, segmentOf } from './render.js'
+import { cloneNeeds, stagedNames } from './stage.js'
 import { hasSegments, openSegments, storeSegments } from './store.js'
 import { UPSTREAM, verifyInput } from './upstream.js'
 import { buildFamilyFont, shareIdenticalSamples } from './write.js'
@@ -55,10 +57,6 @@ interface Sounds {
   merges: Merge[]
   readSource: (key: string) => Promise<Float32Array[]>
   recordingBytes: Map<string, number>
-}
-interface Wanted {
-  fileName: string
-  key: string
 }
 const NULL_SAMPLE_RATE = 64_000
 const MAX_PRESETS_PER_BANK = 128
@@ -516,31 +514,6 @@ const wantedBySource = (plan: Planned[]): Map<string, Wanted[]> => {
       wanted.set(source, [...(wanted.get(source) ?? []), { fileName: font.fileName, key: m.key }])
     }
   return wanted
-}
-const stagedNames = (wanted: Map<string, Wanted[]>): Map<string, string> =>
-  new Map([...wanted.values()].flatMap(needs => needs.map((n, i) => [n.key, `s${i}`] as const)))
-const cloneNeeds = ({
-  byKey,
-  names,
-  needs,
-  stage,
-  u
-}: {
-  byKey: Map<string, BasicPreset>
-  names: Map<string, string>
-  needs: Wanted[]
-  stage: BasicSoundBank
-  u: UpstreamFile
-}) => {
-  const cloner = new SoundBankCloner(stage, { addToBank: true, reuseByName: false, reuseChildren: 'identity' })
-  for (const n of needs) {
-    const source = byKey.get(n.key)
-    if (source === undefined) throw new Error(`staging: ${n.key} vanished from ${u.path}`)
-    const copy = cloner.clonePreset(source)
-    const name = names.get(n.key)
-    if (name === undefined) throw new Error(`staging: no staged name for ${n.key}`)
-    copy.name = name
-  }
 }
 const stageSource = async ({
   names,

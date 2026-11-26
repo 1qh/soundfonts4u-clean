@@ -191,4 +191,4 @@ const rendererKey = async (): Promise<string> => {
   return hasher.digest('hex').slice(0, 16)
 }
 export type { PresetSlot, RenderedFont }
-export { rendererKey, renderFont, renderToWav, segmentOf, segmentSeconds }
+export { buildProbeMidi, rendererKey, renderFont, renderToWav, segmentOf, segmentSeconds }
