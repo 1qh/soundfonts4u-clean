@@ -19,7 +19,6 @@
     "pre-commit": "sh up.sh && git add -u"
   },
   "devDependencies": {
-    "@types/bun": "latest",
     "lintmax": "latest",
     "sherif": "latest",
     "simple-git-hooks": "latest",
