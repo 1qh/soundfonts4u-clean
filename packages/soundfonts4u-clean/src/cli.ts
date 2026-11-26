@@ -2,8 +2,8 @@
 /* eslint-disable no-await-in-loop */
 import type { BasicPreset } from 'spessasynth_core'
 import { CryptoHasher, file, gc, write } from 'bun'
-import { mkdir, readdir, rm } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, readdir, realpath, rm, stat } from 'node:fs/promises'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { BasicSoundBank } from 'spessasynth_core'
 import type { Merge } from './dedupe.js'
 import type { Family } from './families.js'
@@ -64,6 +64,44 @@ const requiredArg = (index: number, label: string): string => {
   const value = process.argv[index]
   if (value === undefined || value.length === 0) throw new Error(`missing argument: ${label}`)
   return value
+}
+const hasGitMarker = async (dir: string): Promise<boolean> => {
+  try {
+    await stat(join(dir, '.git'))
+    return true
+  } catch (markerError) {
+    if (markerError instanceof Error && 'code' in markerError && markerError.code === 'ENOENT') return false
+    throw markerError
+  }
+}
+const findRepositoryRoot = async (dir: string): Promise<string | undefined> => {
+  if (await hasGitMarker(dir)) return dir
+  const parent = dirname(dir)
+  return parent === dir ? undefined : findRepositoryRoot(parent)
+}
+const repositoryRoot = async (): Promise<string | undefined> => findRepositoryRoot(await realpath(import.meta.dirname))
+const resolveCachePath = async (cache: string): Promise<string> => {
+  try {
+    const resolved = await realpath(cache)
+    return resolved
+  } catch (cacheError) {
+    if (cacheError instanceof Error && 'code' in cacheError && cacheError.code === 'ENOENT')
+      return join(await resolveCachePath(dirname(cache)), basename(cache))
+    throw cacheError
+  }
+}
+const isInside = (root: string, dir: string): boolean => {
+  const fromRoot = relative(root, dir)
+  return fromRoot !== '..' && !fromRoot.startsWith(`..${sep}`) && !isAbsolute(fromRoot)
+}
+const requiredCacheDir = async (): Promise<string> => {
+  const cache = resolve(requiredArg(4, 'cache dir'))
+  const root = await repositoryRoot()
+  if (root !== undefined && (isInside(root, cache) || isInside(root, await resolveCachePath(cache))))
+    throw new Error(
+      `Cache dir must be outside the repository (${root}): pm4ai's clean.sh deletes every .cache folder inside the repo. Received ${cache}`
+    )
+  return cache
 }
 const log = (message: string) => {
   process.stderr.write(`${message}\n`)
@@ -933,7 +971,7 @@ const preparePlan = async ({ paths, upstream }: { paths: Paths; upstream: Upstre
 }
 const main = async () => {
   const paths: Paths = {
-    cache: requiredArg(4, 'cache dir'),
+    cache: await requiredCacheDir(),
     input: requiredArg(2, 'input dir'),
     output: requiredArg(3, 'output dir'),
     renderer: await rendererKey()

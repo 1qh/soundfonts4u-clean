@@ -10,6 +10,7 @@
   "dependencies": {
     "@huggingface/transformers": "latest",
     "audio-decode": "latest",
+    "fflate": "latest",
     "ml-hclust": "latest",
     "spessasynth_core": "latest"
   }
