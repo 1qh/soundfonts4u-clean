@@ -13,12 +13,12 @@ import type { Wanted } from './stage.js'
 import type { UpstreamFile } from './upstream.js'
 import type { FamilyFont } from './write.js'
 import { dedupe, nullDb, SILENT_DB } from './dedupe.js'
-import { CLAP_SAMPLE_RATE, cosineDistance, createEmbedder, embedTexts, toMono } from './embed.js'
+import { CLAP_SAMPLE_RATE, cosineDistance, createEmbedder, embedTexts, setModelCacheDir, toMono } from './embed.js'
 import { labelAll, placeLayers, topicOf } from './families.js'
 import { byCodeUnit, listPresets, loadFont, presetKey, slotOf } from './fonts.js'
 import { DROPPED_SOUNDS, SUBFAMILY_NAMES } from './hand-table.js'
 import { assignNames } from './names.js'
-import { centroid, orderBySimilarity } from './order.js'
+import { orderBySimilarity } from './order.js'
 import { rendererKey, renderFont, segmentOf } from './render.js'
 import { cloneNeeds, stagedNames } from './stage.js'
 import { hasSegments, openSegments, storeSegments } from './store.js'
@@ -47,8 +47,7 @@ interface Planned {
   members: { key: string; name: string }[]
 }
 interface PlannedFont {
-  embedding: number[]
-  key: string
+  fileName: string
   members: SourcePreset[]
 }
 interface Sounds {
@@ -332,19 +331,17 @@ const splitProblem = ({ chunks, family }: { chunks: SourcePreset[][]; family: st
 }
 const chunkFonts = ({
   chunks,
-  embeddings,
   family,
   subNames
 }: {
   chunks: SourcePreset[][]
-  embeddings: Map<string, number[]>
   family: Family
   subNames: readonly string[]
 }): PlannedFont[] =>
   chunks.map((chunk, i) => {
     const fileName = subNames[i]
     if (fileName === undefined) throw new Error(`no sub-family name ${i} for ${family}`)
-    return { embedding: centroid(chunk.map(p => embeddings.get(p.key) ?? [])), key: fileName, members: chunk }
+    return { fileName, members: chunk }
   })
 const planFamily = ({
   embeddings,
@@ -359,11 +356,14 @@ const planFamily = ({
   members: SourcePreset[]
   recordingBytes: Map<string, number>
 }): { fonts: PlannedFont[]; problems: string[] } => {
-  const chunks = splitFamily({ ordered: orderFamily({ embeddings, members }), recordingBytes })
+  const chunks = canFitOneFont(members)
+    ? [members]
+    : splitFamily({ ordered: orderFamily({ embeddings, members }), recordingBytes })
   const subNames = chunks.length === 1 ? [fontName] : SUBFAMILY_NAMES[family]
   if (subNames?.length !== chunks.length) return { fonts: [], problems: [splitProblem({ chunks, family: fontName })] }
-  return { fonts: chunkFonts({ chunks, embeddings, family, subNames }), problems: [] }
+  return { fonts: chunkFonts({ chunks, family, subNames }), problems: [] }
 }
+const byName = (a: string, b: string): number => byCodeUnit(a.toLowerCase(), b.toLowerCase()) || byCodeUnit(a, b)
 const namedMembers = ({
   members,
   names
@@ -537,11 +537,13 @@ const planFonts = ({
   const { fonts, splitProblems } = planTopics({ byFamily, embeddings, recordingBytes, tones })
   if (splitProblems.length > 0)
     throw new Error(`name the sub-families in hand-table.ts SUBFAMILY_NAMES:\n${splitProblems.join('\n')}`)
-  return orderBySimilarity(fonts).map((f, bank) => ({
-    bank,
-    fileName: f.key,
-    members: namedMembers({ members: f.members, names })
-  }))
+  return fonts
+    .toSorted((a, b) => byName(a.fileName, b.fileName))
+    .map((f, bank) => ({
+      bank,
+      fileName: f.fileName,
+      members: namedMembers({ members: f.members, names }).toSorted((a, b) => byName(a.name, b.name))
+    }))
 }
 const wantedBySource = (plan: Planned[]): Map<string, Wanted[]> => {
   const wanted = new Map<string, Wanted[]>()
@@ -876,7 +878,10 @@ const checkedNames = async ({
   paths: Paths
 }): Promise<Map<string, string>> => {
   const { names, problems } = await assignNames({ embeddings, labels, presets: kept })
-  if (problems.length === 0) return names
+  if (problems.length === 0) {
+    await rm(join(paths.cache, 'name-problems.tsv'), { force: true })
+    return names
+  }
   const report = problems.map(p => `${p.key}\t${p.name}\t${p.problem}`).join('\n')
   await write(join(paths.cache, 'name-problems.tsv'), `${report}\n`)
   throw new Error(`${problems.length} names need hand-table.ts entries; see ${join(paths.cache, 'name-problems.tsv')}`)
@@ -969,21 +974,37 @@ const preparePlan = async ({ paths, upstream }: { paths: Paths; upstream: Upstre
   })
   return { plan, sounds }
 }
-const main = async () => {
-  const paths: Paths = {
-    cache: await requiredCacheDir(),
-    input: requiredArg(2, 'input dir'),
-    output: requiredArg(3, 'output dir'),
-    renderer: await rendererKey()
-  }
-  log(`renderer key ${paths.renderer}`)
-  const upstream = await verifiedUpstream(paths)
-  const { plan, sounds } = await preparePlan({ paths, upstream })
-  const records = await stageAndWrite({ paths, plan, upstream })
+const buildPaths = async (): Promise<Paths> => ({
+  cache: await requiredCacheDir(),
+  input: requiredArg(2, 'input dir'),
+  output: requiredArg(3, 'output dir'),
+  renderer: await rendererKey()
+})
+const finalizeOutput = async ({
+  paths,
+  plan,
+  records,
+  sounds
+}: {
+  paths: Paths
+  plan: Planned[]
+  records: Map<string, FontRecord>
+  sounds: Sounds
+}) => {
   await clearStaleOutputs(paths, plan)
   const drumKeys = new Set(sounds.kept.filter(p => p.slot.isDrum).map(p => p.key))
   await proveOutput({ drumKeys, paths, plan, readSource: sounds.readSource, records })
   await writeManifest({ merges: sounds.merges, paths, plan })
   log(`ok: ${plan.length} fonts, ${sounds.kept.length} sounds`)
 }
-await main()
+const main = async () => {
+  const paths = await buildPaths()
+  setModelCacheDir(join(paths.cache, 'models'))
+  log(`renderer key ${paths.renderer}`)
+  const upstream = await verifiedUpstream(paths)
+  const { plan, sounds } = await preparePlan({ paths, upstream })
+  const records = await stageAndWrite({ paths, plan, upstream })
+  await finalizeOutput({ paths, plan, records, sounds })
+}
+if (import.meta.main) await main()
+export { planFonts }

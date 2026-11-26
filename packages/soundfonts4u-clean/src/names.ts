@@ -2,7 +2,7 @@ import type { Family } from './families.js'
 import type { SourcePreset } from './fonts.js'
 import { cosineDistance, embedTexts } from './embed.js'
 import { HAND_NAMES } from './hand-table.js'
-import { splitWords } from './text.js'
+import { spacedWords, splitWords } from './text.js'
 const MAX_NAME_LENGTH = 20
 const VALID_NAME = /^[A-Z][A-Za-z]*$/v
 const NOT_THE_SOUND = new Set([
@@ -26,11 +26,14 @@ const NOT_THE_SOUND = new Set([
   'kawai',
   'kbh',
   'korg',
+  'le',
   'lite',
+  'map',
   'mark',
   'marks',
   'mason',
   'mh',
+  'mod',
   'nice',
   'ny',
   'orpheus',
@@ -40,13 +43,16 @@ const NOT_THE_SOUND = new Set([
   'plus',
   'pro',
   'real',
+  'rol',
   'roland',
   's',
   'sal',
   'salamander',
+  'sc',
   'sgm',
   'sso',
   'steinway',
+  'sybs',
   'ultimate',
   'universal',
   'yam',
@@ -118,7 +124,58 @@ const DESCRIPTORS = [
   'Wide'
 ] as const
 const SOUND_ABBREVIATIONS = new Set(['CR', 'DX', 'EP', 'FM', 'SD', 'SFX', 'TR'])
-const SPELLED: Readonly<Record<string, string>> = { brt: 'bright' }
+const SPELLED: Readonly<Record<string, string>> = {
+  accordeon: 'accordion',
+  accordian: 'accordion',
+  brt: 'bright',
+  cbs: 'contrabass',
+  cym: 'cymbal',
+  dis: 'distortion',
+  dist: 'distortion',
+  dyn: 'dynamic',
+  exp: 'expressive',
+  fl: 'flute',
+  ful: 'full',
+  gt: 'guitar',
+  har: 'harmonics',
+  harm: 'harmonics',
+  lg: 'large',
+  lge: 'large',
+  med: 'medium',
+  oct: 'octave',
+  orc: 'orchestra',
+  org: 'organ',
+  orhcestra: 'orchestra',
+  pic: 'pick',
+  res: 'resonance',
+  rez: 'resonance',
+  sm: 'small',
+  sml: 'small',
+  sq: 'square',
+  sqr: 'square',
+  st: 'stereo',
+  std: 'standard',
+  stl: 'steel',
+  str: 'strings',
+  sus: 'sustain',
+  syn: 'synth',
+  th: 'fifth',
+  trem: 'tremolo',
+  trm: 'tremolo',
+  var: 'variable',
+  vel: 'velocity',
+  whistlin: 'whistling'
+}
+const ACRONYM_BOUNDARY = /(?<initial>[A-Z])(?<word>[A-Z][a-z])/gv
+const SOUND_ABBREVIATION_PATTERN = new RegExp([...SOUND_ABBREVIATIONS].join('|'), 'gv')
+const nameWords = (name: string): string[] => {
+  const spaced = spacedWords(name.replaceAll(ACRONYM_BOUNDARY, '$<initial> $<word>'))
+  return spaced.split(' ').flatMap(w => {
+    const abbreviations = Array.from(w.matchAll(SOUND_ABBREVIATION_PATTERN), m => m[0])
+    const parts = abbreviations.length > 0 && abbreviations.join('') === w ? abbreviations : [w]
+    return parts.map(part => part.toLowerCase())
+  })
+}
 const isSourceAbbreviation = (w: string): boolean =>
   w.length === 1 || (w.length <= 3 && w === w.toUpperCase() && !SOUND_ABBREVIATIONS.has(w))
 const baseName = ({ family, p }: { family: Family | undefined; p: SourcePreset }): string => {
@@ -165,9 +222,9 @@ interface DescriptorPair {
   score: number
   word: string
 }
-const chooseDescriptors = (pairs: DescriptorPair[]): Map<string, string> => {
+const chooseDescriptors = (pairs: DescriptorPair[], existingWords: Set<string>): Map<string, string> => {
   const sorted = pairs.toSorted((a, b) => b.score - a.score || a.key.localeCompare(b.key) || a.word.localeCompare(b.word))
-  const candidates = sorted.filter(pair => pair.word.length > 0)
+  const candidates = sorted.filter(pair => pair.word.length > 0 && !existingWords.has(pair.word.toLowerCase()))
   const chosen = new Map<string, string>()
   const usedWords = new Set<string>()
   const choose = ({ key, word }: DescriptorPair) => {
@@ -180,9 +237,11 @@ const chooseDescriptors = (pairs: DescriptorPair[]): Map<string, string> => {
 }
 const pickDescriptors = ({
   group,
+  name,
   words: wordVectors
 }: {
   group: { embedding: number[]; key: string }[]
+  name: string
   words: number[][]
 }): Map<string, string> => {
   const mean = wordVectors.map(w => {
@@ -190,20 +249,24 @@ const pickDescriptors = ({
     for (const m of group) total += similarity(m.embedding, w)
     return total / group.length
   })
-  const pairs = group.flatMap(m =>
-    wordVectors.map((w, wi) => ({
-      key: m.key,
-      score: similarity(m.embedding, w) - (mean[wi] ?? 0),
-      word: DESCRIPTORS[wi] ?? ''
-    }))
-  )
-  return chooseDescriptors(pairs)
+  const pairs = group
+    .flatMap(m =>
+      wordVectors.map((w, wi) => ({
+        key: m.key,
+        score: similarity(m.embedding, w) - (mean[wi] ?? 0),
+        word: DESCRIPTORS[wi] ?? ''
+      }))
+    )
+    .filter(pair => name.length + pair.word.length <= MAX_NAME_LENGTH)
+  return chooseDescriptors(pairs, new Set(nameWords(name)))
 }
 const addDescriptors = async ({
+  embedDescriptors,
   embeddings,
   names,
   presets
 }: {
+  embedDescriptors: typeof embedTexts
   embeddings: Map<string, number[]>
   names: Map<string, string>
   presets: SourcePreset[]
@@ -211,20 +274,24 @@ const addDescriptors = async ({
   const collidingPresets = collidingDerived({ names, presets })
   const groups = groupByName({ names, presets: collidingPresets })
   if (groups.size === 0) return
-  const wordVectors = await embedTexts(DESCRIPTORS.map(d => `a ${d.toLowerCase()} sound`))
-  for (const group of groups.values()) {
+  const wordVectors = await embedDescriptors(DESCRIPTORS.map(d => `a ${d.toLowerCase()} sound`))
+  for (const [name, group] of groups) {
     const members = group.flatMap(p => {
       const embedding = embeddings.get(p.key)
       return embedding === undefined ? [] : [{ embedding, key: p.key }]
     })
-    const chosen = pickDescriptors({ group: members, words: wordVectors })
+    const chosen = pickDescriptors({ group: members, name, words: wordVectors })
     for (const [key, word] of chosen) names.set(key, `${names.get(key) ?? ''}${word}`)
   }
 }
-const formatProblems = ({ key, name }: { key: string; name: string }): NameProblem[] => [
-  ...(VALID_NAME.test(name) ? [] : [{ key, name, problem: 'not CamelCase letters only' }]),
-  ...(name.length > MAX_NAME_LENGTH ? [{ key, name, problem: `${name.length} chars` }] : [])
-]
+const formatProblems = ({ key, name }: { key: string; name: string }): NameProblem[] => {
+  const parts = nameWords(name)
+  return [
+    ...(VALID_NAME.test(name) ? [] : [{ key, name, problem: 'not CamelCase letters only' }]),
+    ...(name.length > MAX_NAME_LENGTH ? [{ key, name, problem: `${name.length} chars` }] : []),
+    ...(new Set(parts).size < parts.length ? [{ key, name, problem: 'repeated word' }] : [])
+  ]
+}
 const clashProblems = ({ key, name, seen }: { key: string; name: string; seen: Map<string, string> }): NameProblem[] => {
   const clash = seen.get(name)
   if (clash !== undefined) return [{ key, name, problem: `same name as ${clash}` }]
@@ -242,11 +309,6 @@ const findProblems = ({ names, presets }: { names: Map<string, string>; presets:
   return problems
 }
 const SHORT_FORMS: readonly (readonly [RegExp, string])[] = [
-  [/Tremolo|Trm/gv, 'Trem'],
-  [/Dynamic/gv, 'Dyn'],
-  [/Small|Sml/gv, 'Sm'],
-  [/Large/gv, 'Lg'],
-  [/Velocity/gv, 'Vel'],
   [/Italian/gv, ''],
   [/Harpsichord/gv, '']
 ]
@@ -256,16 +318,18 @@ const shorten = (name: string): string => {
   return out
 }
 const assignNames = async ({
+  embedDescriptors = embedTexts,
   embeddings,
   labels,
   presets
 }: {
+  embedDescriptors?: typeof embedTexts
   embeddings: Map<string, number[]>
   labels: Map<string, Family>
   presets: SourcePreset[]
 }): Promise<{ names: Map<string, string>; problems: NameProblem[] }> => {
   const names = baseNames({ labels, presets })
-  const descriptorInputs = { embeddings, names, presets }
+  const descriptorInputs = { embedDescriptors, embeddings, names, presets }
   await addDescriptors(descriptorInputs)
   await addDescriptors(descriptorInputs)
   await addDescriptors(descriptorInputs)

@@ -2,7 +2,8 @@ import {
   AutoProcessor,
   AutoTokenizer,
   ClapAudioModelWithProjection,
-  ClapTextModelWithProjection
+  ClapTextModelWithProjection,
+  env
 } from '@huggingface/transformers'
 const CLAP_MODEL = 'Xenova/larger_clap_general'
 const CLAP_SAMPLE_RATE = 48_000
@@ -22,6 +23,9 @@ const embedsOf = (output: unknown): Float32Array | Float64Array | undefined => {
   if (data === undefined) return undefined
   if (data instanceof Float32Array || data instanceof Float64Array) return data
   throw new TypeError(`${CLAP_MODEL} returned audio_embeds whose data is not a float array`)
+}
+const setModelCacheDir = (dir: string) => {
+  env.cacheDir = dir
 }
 const createEmbedder = async (): Promise<Embedder> => {
   const processor = await AutoProcessor.from_pretrained(CLAP_MODEL)
@@ -69,4 +73,4 @@ const cosineDistance = (a: number[], b: number[]): number => {
   return 1 - dot
 }
 export type { Embedder }
-export { CLAP_SAMPLE_RATE, cosineDistance, createEmbedder, embedTexts, toMono }
+export { CLAP_SAMPLE_RATE, cosineDistance, createEmbedder, embedTexts, setModelCacheDir, toMono }
